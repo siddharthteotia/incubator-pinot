@@ -22,6 +22,7 @@ import java.util.Map;
 import org.apache.helix.HelixAdmin;
 import org.apache.helix.HelixManager;
 import org.apache.helix.model.ExternalView;
+import org.apache.helix.model.MasterSlaveSMD;
 import org.apache.pinot.common.utils.CommonConstants;
 import org.apache.pinot.controller.ControllerConf;
 import org.apache.pinot.controller.ControllerStarter;
@@ -95,9 +96,9 @@ public class PinotControllerModeTest extends ControllerTest {
     _controllerStarter = null;
   }
 
-  // TODO: enable it after removing ControllerLeadershipManager which requires both CONTROLLER and PARTICIPANT
+  // TODO: enable it after removing HelixControllerLeadershipManager which requires both CONTROLLER and PARTICIPANT
   //       HelixManager
-  @Test(enabled = false)
+  @Test
   public void testPinotOnlyController()
       throws Exception {
     config.setControllerMode(ControllerConf.ControllerMode.PINOT_ONLY);
@@ -123,8 +124,13 @@ public class PinotControllerModeTest extends ControllerTest {
     TestUtils.waitForCondition(aVoid -> helixControllerManager.isConnected(), TIMEOUT_IN_MS,
         "Failed to start " + config2.getControllerMode() + " controller in " + TIMEOUT_IN_MS + "ms.");
 
-    // Enable the lead controller resource.
-    helixAdmin.enableResource(getHelixClusterName(), CommonConstants.Helix.LEAD_CONTROLLER_RESOURCE_NAME, true);
+    try {
+      // Enable the lead controller resource.
+      helixAdmin.enableResource(getHelixClusterName(), CommonConstants.Helix.LEAD_CONTROLLER_RESOURCE_NAME, true);
+      Assert.fail("Enabling resource before starting the 1st Pinot controller should fail.");
+    } catch (Exception e) {
+      // Expected.
+    }
 
     // Starting a pinot only controller.
     ControllerConf config3 = getDefaultControllerConfiguration();
@@ -140,6 +146,9 @@ public class PinotControllerModeTest extends ControllerTest {
     TestUtils.waitForCondition(aVoid -> firstPinotOnlyPinotHelixResourceManager.getHelixZkManager().isConnected(),
         TIMEOUT_IN_MS, "Failed to start " + config.getControllerMode() + " controller in " + TIMEOUT_IN_MS + "ms.");
     Assert.assertEquals(firstPinotOnlyController.getControllerMode(), ControllerConf.ControllerMode.PINOT_ONLY);
+
+    // Enable the lead controller resource.
+    helixAdmin.enableResource(getHelixClusterName(), CommonConstants.Helix.LEAD_CONTROLLER_RESOURCE_NAME, true);
 
     // Start a second Pinot only controller.
     ControllerConf config4 = getDefaultControllerConfiguration();
@@ -184,7 +193,7 @@ public class PinotControllerModeTest extends ControllerTest {
         Map<String, String> stateMap = leadControllerResourceExternalView.getStateMap(partition);
         // Only 1 participant left in each partition, which will become the master.
         for (Map.Entry<String, String> entry : stateMap.entrySet()) {
-          if (!"MASTER".equals(entry.getValue())) {
+          if (!MasterSlaveSMD.States.MASTER.name().equals(entry.getValue())) {
             return false;
           }
         }
