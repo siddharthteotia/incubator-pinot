@@ -31,6 +31,8 @@ public class SegmentTarPushJob extends BaseSegmentJob {
   private final Path _segmentPattern;
   private final List<PushLocation> _pushLocations;
 
+  private static final String TABLE_TYPE = "OFFLINE";
+
   public SegmentTarPushJob(Properties properties) {
     super(properties);
     _segmentPattern = Preconditions.checkNotNull(getPathFromProperty(JobConfigConstants.PATH_TO_OUTPUT));
@@ -48,7 +50,12 @@ public class SegmentTarPushJob extends BaseSegmentJob {
       throws Exception {
     FileSystem fileSystem = FileSystem.get(_conf);
     try (ControllerRestApi controllerRestApi = getControllerRestApi()) {
+      List<String> segmentsBeforePush = controllerRestApi.getAllSegments(TABLE_TYPE);
       controllerRestApi.pushSegments(fileSystem, getDataFilePaths(_segmentPattern));
+      List<String> segmentsAfterPush = controllerRestApi.getAllSegments(TABLE_TYPE);
+
+      segmentsBeforePush.removeAll(segmentsAfterPush);
+      controllerRestApi.deleteExtraSegmentUris(segmentsBeforePush);
     }
   }
 
