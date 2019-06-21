@@ -35,6 +35,7 @@ public class LeadControllerManager {
 
   private final LeadControllerChecker _leadControllerChecker;
   private PinotHelixResourceManager _pinotHelixResourceManager;
+  private boolean _amIHelixLeader = false;
 
   public LeadControllerManager() {
     _leadControllerChecker = new LeadControllerChecker();
@@ -52,7 +53,7 @@ public class LeadControllerManager {
   public boolean isLeaderForTable(String tableName) {
     String rawTableName = TableNameBuilder.extractRawTableName(tableName);
     int partitionIndex =
-        HelixHelper.getHashCodeForTable(rawTableName) % NUMBER_OF_PARTITIONS_IN_LEAD_CONTROLLER_RESOURCE;
+        HelixHelper.getPartitionIdForTable(rawTableName, NUMBER_OF_PARTITIONS_IN_LEAD_CONTROLLER_RESOURCE);
     if (_leadControllerChecker.isPartitionLeader(partitionIndex)) {
       return true;
     } else {
@@ -80,8 +81,32 @@ public class LeadControllerManager {
     _leadControllerChecker.removePartitionLeader(partitionName);
   }
 
+  /**
+   * Checks if the current controller host is Helix leader.
+   */
   private boolean isHelixLeader() {
-    return _pinotHelixResourceManager != null && _pinotHelixResourceManager.isHelixLeader();
+    return _amIHelixLeader;
+  }
+
+  /**
+   * Callback on changes in the controller. Should be registered to the controller callback.
+   */
+  public void onHelixControllerChange() {
+    if (_pinotHelixResourceManager.isHelixLeader()) {
+      if (!_amIHelixLeader) {
+        _amIHelixLeader = true;
+        LOGGER.info("Became Helix leader");
+      } else {
+        LOGGER.info("Already Helix leader. Duplicate notification");
+      }
+    } else {
+      if (_amIHelixLeader) {
+        _amIHelixLeader = false;
+        LOGGER.info("Lost Helix leadership");
+      } else {
+        LOGGER.info("Already not Helix leader. Duplicate notification");
+      }
+    }
   }
 
   public void onLeadControllerChange() {
