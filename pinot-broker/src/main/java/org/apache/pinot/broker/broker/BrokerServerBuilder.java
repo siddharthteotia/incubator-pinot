@@ -86,7 +86,7 @@ public class BrokerServerBuilder {
     } else {
       LOGGER.info("Using SingleConnectionBrokerRequestHandler");
       return new SingleConnectionBrokerRequestHandler(_config, _routingTable, _timeBoundaryService,
-          _accessControlFactory, _queryQuotaManager, _brokerMetrics);
+          _accessControlFactory, _queryQuotaManager, _brokerMetrics, _metricsRegistry);
     }
   }
 

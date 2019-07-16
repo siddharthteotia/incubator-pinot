@@ -87,7 +87,7 @@ public class ConnectionPoolBrokerRequestHandler extends BaseBrokerRequestHandler
   public ConnectionPoolBrokerRequestHandler(Configuration config, RoutingTable routingTable,
       TimeBoundaryService timeBoundaryService, AccessControlFactory accessControlFactory,
       QueryQuotaManager queryQuotaManager, BrokerMetrics brokerMetrics, MetricsRegistry metricsRegistry) {
-    super(config, routingTable, timeBoundaryService, accessControlFactory, queryQuotaManager, brokerMetrics);
+    super(config, routingTable, timeBoundaryService, accessControlFactory, queryQuotaManager, brokerMetrics, metricsRegistry);
 
     TransportClientConf transportClientConf = new TransportClientConf();
     transportClientConf.init(_config.subset(TRANSPORT_CONFIG_PREFIX));
@@ -228,6 +228,8 @@ public class ConnectionPoolBrokerRequestHandler extends BaseBrokerRequestHandler
     }
     _brokerMetrics
         .addMeteredQueryValue(originalBrokerRequest, BrokerMeter.TOTAL_SERVER_RESPONSE_SIZE, totalServerResponseSize);
+
+    decrementQueryCount();
 
     return brokerResponse;
   }

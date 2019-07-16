@@ -21,6 +21,7 @@ package org.apache.pinot.broker.requesthandler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.base.Splitter;
 import com.google.common.util.concurrent.RateLimiter;
+import com.yammer.metrics.core.MetricsRegistry;
 import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -87,9 +88,11 @@ public abstract class BaseBrokerRequestHandler implements BrokerRequestHandler {
   private final RateLimiter _numDroppedLogRateLimiter;
   private final AtomicInteger _numDroppedLog;
 
+  private final BrokerQPSMetricsHandler _brokerQPSMetricsHandler;
+
   public BaseBrokerRequestHandler(Configuration config, RoutingTable routingTable,
       TimeBoundaryService timeBoundaryService, AccessControlFactory accessControlFactory,
-      QueryQuotaManager queryQuotaManager, BrokerMetrics brokerMetrics) {
+      QueryQuotaManager queryQuotaManager, BrokerMetrics brokerMetrics, MetricsRegistry metricsRegistry) {
     _config = config;
     _routingTable = routingTable;
     _timeBoundaryService = timeBoundaryService;
@@ -106,6 +109,8 @@ public abstract class BaseBrokerRequestHandler implements BrokerRequestHandler {
 
     _numDroppedLog = new AtomicInteger(0);
     _numDroppedLogRateLimiter = RateLimiter.create(1.0);
+
+    _brokerQPSMetricsHandler = new BrokerQPSMetricsHandler(config, metricsRegistry);
 
     LOGGER
         .info("Broker Id: {}, timeout: {}ms, query response limit: {}, query log length: {}, query log max rate: {}qps",
@@ -154,6 +159,8 @@ public abstract class BaseBrokerRequestHandler implements BrokerRequestHandler {
     _brokerMetrics.addPhaseTiming(rawTableName, BrokerQueryPhase.REQUEST_COMPILATION,
         compilationEndTimeNs - compilationStartTimeNs);
     _brokerMetrics.addMeteredTableValue(rawTableName, BrokerMeter.QUERIES, 1);
+
+    _brokerQPSMetricsHandler.incrementQueryCount();
 
     // Check table access
     boolean hasAccess = _accessControlFactory.create().hasAccess(requesterIdentity, brokerRequest);
@@ -335,6 +342,10 @@ public abstract class BaseBrokerRequestHandler implements BrokerRequestHandler {
       _numDroppedLog.incrementAndGet();
     }
     return brokerResponse;
+  }
+
+  protected void decrementQueryCount() {
+    _brokerQPSMetricsHandler.decrementQueryCount();
   }
 
   private PinotQueryRequest getPinotQueryRequest(JsonNode request) {
