@@ -41,6 +41,18 @@ public class TransformBlockDataFetcher {
     }
   }
 
+  /**
+   * Alternate constructor for single-value non-dictionary based
+   * fetchers
+   * @param blockValSets block value sets
+   */
+  public TransformBlockDataFetcher(BlockValSet[] blockValSets) {
+    _fetchers = new Fetcher[blockValSets.length];
+    for (int i = 0; i < blockValSets.length; i++) {
+      _fetchers[i] = createFetcher(blockValSets[i]);
+    }
+  }
+
   public Serializable[] getRow(int docId) {
     Serializable[] row = new Serializable[_fetchers.length];
     for (int i = 0; i < _fetchers.length; i++) {
@@ -49,7 +61,32 @@ public class TransformBlockDataFetcher {
     return row;
   }
 
-  Fetcher createFetcher(BlockValSet blockValSet,
+  /**
+   * Create SV non-dictionary based fetcher
+   * @param blockValSet column value set
+   * @return fetcher
+   */
+  private Fetcher createFetcher(BlockValSet blockValSet) {
+    switch (blockValSet.getValueType()) {
+      case INT:
+        return new SVIntValueFetcher(blockValSet.getIntValuesSV());
+      case LONG:
+        return new SVLongValueFetcher(blockValSet.getLongValuesSV());
+      case FLOAT:
+        return new SVFloatValueFetcher(blockValSet.getFloatValuesSV());
+      case DOUBLE:
+        return new SVDoubleValueFetcher(blockValSet.getDoubleValuesSV());
+      case BOOLEAN:
+      case STRING:
+        return new SVStringValueFetcher(blockValSet.getStringValuesSV());
+      case BYTES:
+        return new SVBytesValueFetcher(blockValSet.getBytesValuesSV());
+    }
+
+    throw new UnsupportedOperationException();
+  }
+
+  private Fetcher createFetcher(BlockValSet blockValSet,
       Dictionary dictionary,
       TransformResultMetadata expressionResultMetadata) {
     if (expressionResultMetadata.hasDictionary()) {

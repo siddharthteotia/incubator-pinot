@@ -38,7 +38,9 @@ import org.apache.pinot.common.request.PinotQuery;
 import org.apache.pinot.common.request.QuerySource;
 import org.apache.pinot.common.request.Selection;
 import org.apache.pinot.common.request.SelectionSort;
+import org.apache.pinot.common.request.transform.TransformExpressionTree;
 import org.apache.pinot.pql.parsers.pql2.ast.FilterKind;
+import org.apache.pinot.pql.parsers.pql2.ast.FunctionCallAstNode;
 
 
 public class PinotQuery2BrokerRequestConverter {
@@ -111,6 +113,7 @@ public class PinotQuery2BrokerRequestConverter {
   }
 
   private void convertSelectList(PinotQuery pinotQuery, BrokerRequest brokerRequest) {
+
     Selection selection = null;
     List<AggregationInfo> aggregationInfoList = null;
     for (Expression expression : pinotQuery.getSelectList()) {
@@ -223,36 +226,63 @@ public class PinotQuery2BrokerRequestConverter {
 
   private AggregationInfo buildAggregationInfo(Function function) {
     List<Expression> operands = function.getOperands();
-    if (operands == null || operands.size() != 1) {
-      throw new Pql2CompilationException(
-          "Aggregation function" + function.getOperator() + " expects 1 argument. found: " + operands);
+    if (operands == null || operands.size() < 1) {
+      throw new Pql2CompilationException("Aggregation function expects non null argument");
     }
-    String functionName = function.getOperator();
-    String columnName;
-    if (functionName.equalsIgnoreCase("count")) {
-      columnName = "*";
-    } else {
-      Expression functionParam = operands.get(0);
 
-      switch (functionParam.getType()) {
-        case LITERAL:
-          columnName = functionParam.getLiteral().getStringValue();
-          break;
-        case IDENTIFIER:
-          columnName = functionParam.getIdentifier().getName();
-          break;
-        case FUNCTION:
-          columnName = standardizeExpression(functionParam, false, true);
-          break;
-        default:
-          throw new UnsupportedOperationException("Unrecognized functionParamType:" + functionParam.getType());
+    String columnName;
+    String functionName = function.getOperator();
+
+    if (functionName.equalsIgnoreCase(FunctionCallAstNode.DISTINCT_FUNCTION_NAME)) {
+      // DISTINCT can support multiple arguments
+      if (operands.size() == 1) {
+        // single column DISTINCT
+        columnName = getColumnExpression(operands.get(0));
+      } else {
+        // multi column DISTINCT
+        final StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < operands.size() ; ++i) {
+          Expression expression = operands.get(i);
+          sb.append(getColumnExpression(expression));
+          if (i <= operands.size() - 2) {
+            sb.append(FunctionCallAstNode.DISTINCT_MULTI_COLUMN_SEPARATOR);
+          }
+        }
+        columnName = sb.toString();
+      }
+    } else {
+      // other aggregation functions support exactly one argument
+      if (operands.size() != 1) {
+        throw new Pql2CompilationException(
+            "Aggregation function" + function.getOperator() + " expects 1 argument. found: " + operands);
+      }
+
+      if (functionName.equalsIgnoreCase("count")) {
+        columnName = "*";
+      } else {
+        Expression functionParam = operands.get(0);
+        columnName = getColumnExpression(functionParam);
       }
     }
+
     AggregationInfo aggregationInfo = new AggregationInfo();
     aggregationInfo.setAggregationType(functionName);
     aggregationInfo.putToAggregationParams("column", columnName);
     aggregationInfo.setIsInSelectList(true);
     return aggregationInfo;
+  }
+
+  private String getColumnExpression(Expression functionParam) {
+    switch (functionParam.getType()) {
+      case LITERAL:
+        return functionParam.getLiteral().getStringValue();
+      case IDENTIFIER:
+        return functionParam.getIdentifier().getName();
+      case FUNCTION:
+        return standardizeExpression(functionParam, false, true);
+      default:
+        throw new UnsupportedOperationException("Unrecognized functionParamType:" + functionParam.getType());
+    }
   }
 
   private FilterQuery traverseFilterExpression(Expression filterExpression, FilterQueryMap filterSubQueryMap) {

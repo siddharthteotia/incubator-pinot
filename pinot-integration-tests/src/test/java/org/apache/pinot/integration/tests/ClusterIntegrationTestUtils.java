@@ -53,6 +53,7 @@ import org.apache.pinot.broker.requesthandler.PinotQueryParserFactory;
 import org.apache.pinot.broker.requesthandler.PinotQueryRequest;
 import org.apache.pinot.client.Request;
 import org.apache.pinot.client.ResultSetGroup;
+import org.apache.pinot.common.request.BrokerRequest;
 import org.apache.pinot.common.utils.JsonUtils;
 import org.apache.pinot.common.utils.StringUtil;
 import org.apache.pinot.common.utils.TarGzCompressionUtils;
@@ -65,6 +66,7 @@ import org.apache.pinot.core.segment.creator.SegmentIndexCreationDriver;
 import org.apache.pinot.core.segment.creator.impl.SegmentIndexCreationDriverImpl;
 import org.apache.pinot.core.startree.v2.builder.StarTreeV2BuilderConfig;
 import org.apache.pinot.core.util.AvroUtils;
+import org.apache.pinot.parsers.AbstractCompiler;
 import org.apache.pinot.server.util.SegmentTestUtils;
 import org.testng.Assert;
 
@@ -655,9 +657,13 @@ public class ClusterIntegrationTestUtils {
       ResultSet h2ResultSet = h2statement.getResultSet();
       ResultSetMetaData h2MetaData = h2ResultSet.getMetaData();
 
-      List<String> orderByColumns = SelectionOperatorUtils.extractSortColumns(
-          PinotQueryParserFactory.get("pql").compileToBrokerRequest(pinotQuery).getSelections()
-              .getSelectionSortSequence());
+      List<String> orderByColumns;
+      BrokerRequest brokerRequest =  PinotQueryParserFactory.get("pql").compileToBrokerRequest(pinotQuery);
+      if (brokerRequest.isSetSelections()) {
+        orderByColumns = SelectionOperatorUtils.extractSortColumns(brokerRequest.getSelections().getSelectionSortSequence());
+      } else {
+        orderByColumns = new ArrayList<>();
+      }
       Set<String> expectedValues = new HashSet<>();
       List<String> expectedOrderByValues = new ArrayList<>();
       Map<String, String> reusableExpectedValueMap = new HashMap<>();

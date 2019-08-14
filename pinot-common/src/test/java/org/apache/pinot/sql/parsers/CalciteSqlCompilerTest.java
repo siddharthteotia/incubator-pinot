@@ -23,10 +23,15 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.List;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.parser.SqlParseException;
+import org.apache.pinot.common.request.AggregationInfo;
 import org.apache.pinot.common.request.BrokerRequest;
 import org.apache.pinot.common.request.Expression;
+import org.apache.pinot.common.request.ExpressionType;
 import org.apache.pinot.common.request.FilterOperator;
 import org.apache.pinot.common.request.Function;
+import org.apache.pinot.common.request.Identifier;
+import org.apache.pinot.common.request.Literal;
 import org.apache.pinot.common.request.PinotQuery;
 import org.apache.pinot.pql.parsers.PinotQuery2BrokerRequestConverter;
 import org.apache.pinot.pql.parsers.Pql2Compiler;
@@ -421,5 +426,135 @@ public class CalciteSqlCompilerTest {
             .getIdentifier().getName(), "k1");
     Assert.assertEquals(
         pinotQuery.getFilterExpression().getFunctionCall().getOperands().get(1).getLiteral().getStringValue(), "v1");
+  }
+
+  @Test
+  public void testSqlDistinctQueryCompilation() {
+    Pql2Compiler.ENABLE_DISTINCT = true;
+    String sql = "SELECT DISTINCT c1, c2 FROM foo";
+    PinotQuery pinotQuery = CalciteSqlParser.compileToPinotQuery(sql);
+    List<Expression> selectListExpressions = pinotQuery.getSelectList();
+    Assert.assertEquals(selectListExpressions.size(), 1);
+    Assert.assertEquals(selectListExpressions.get(0).getType(), ExpressionType.FUNCTION);
+
+    Function distinctFunction = selectListExpressions.get(0).getFunctionCall();
+    Assert.assertEquals(distinctFunction.getOperator(), "DISTINCT");
+    Assert.assertEquals(distinctFunction.getOperands().size(), 2);
+
+    Identifier c1 = distinctFunction.getOperands().get(0).getIdentifier();
+    Identifier c2 = distinctFunction.getOperands().get(1).getIdentifier();
+    Assert.assertEquals(c1.getName(), "c1");
+    Assert.assertEquals(c2.getName(), "c2");
+
+    PinotQuery2BrokerRequestConverter converter = new PinotQuery2BrokerRequestConverter();
+    BrokerRequest brokerRequest = converter.convert(pinotQuery);
+    List<AggregationInfo> aggregationInfos = brokerRequest.getAggregationsInfo();
+
+    Assert.assertEquals(aggregationInfos.size(), 1);
+    AggregationInfo aggregationInfo = aggregationInfos.get(0);
+    Assert.assertEquals(aggregationInfo.getAggregationType(), "DISTINCT");
+    Assert.assertEquals(aggregationInfo.getAggregationParams().get("column"), "c1:c2");
+
+    sql = "SELECT DISTINCT c1, c2, c3 FROM foo WHERE c3 > 100";
+    pinotQuery = CalciteSqlParser.compileToPinotQuery(sql);
+
+    selectListExpressions = pinotQuery.getSelectList();
+    Assert.assertEquals(selectListExpressions.size(), 1);
+    Assert.assertEquals(selectListExpressions.get(0).getType(), ExpressionType.FUNCTION);
+
+    distinctFunction = selectListExpressions.get(0).getFunctionCall();
+    Assert.assertEquals(distinctFunction.getOperator(), "DISTINCT");
+    Assert.assertEquals(distinctFunction.getOperands().size(), 3);
+
+    final Expression filter = pinotQuery.getFilterExpression();
+    Assert.assertEquals(filter.getFunctionCall().getOperator(), "GREATER_THAN");
+    Assert.assertEquals(filter.getFunctionCall().getOperands().get(0).getIdentifier().getName(), "c3");
+    Assert.assertEquals(filter.getFunctionCall().getOperands().get(1).getLiteral().getLongValue(), 100);
+
+    c1 = distinctFunction.getOperands().get(0).getIdentifier();
+    c2 = distinctFunction.getOperands().get(1).getIdentifier();
+    Identifier c3 = distinctFunction.getOperands().get(2).getIdentifier();
+    Assert.assertEquals(c1.getName(), "c1");
+    Assert.assertEquals(c2.getName(), "c2");
+    Assert.assertEquals(c3.getName(), "c3");
+
+    converter = new PinotQuery2BrokerRequestConverter();
+    brokerRequest = converter.convert(pinotQuery);
+    aggregationInfos = brokerRequest.getAggregationsInfo();
+
+    Assert.assertEquals(aggregationInfos.size(), 1);
+    aggregationInfo = aggregationInfos.get(0);
+    Assert.assertEquals(aggregationInfo.getAggregationType(), "DISTINCT");
+    Assert.assertEquals(aggregationInfo.getAggregationParams().get("column"), "c1:c2:c3");
+
+    // not supported by Calcite SQL (this is in compliance with SQL standard)
+    try {
+      sql = "SELECT sum(c1), DISTINCT c2 FROM foo";
+      CalciteSqlParser.compileToPinotQuery(sql);
+      Assert.fail("Query should have failed compilation");
+    } catch (Exception e) {
+      Assert.assertTrue(e instanceof SqlCompilationException);
+      Assert.assertTrue(e.getCause() instanceof SqlParseException);
+      Assert.assertTrue(e.getCause().getMessage().contains("Encountered \", DISTINCT\" at line 1, column 15."));
+    }
+
+    // not supported by Calcite SQL (this is in compliance with SQL standard)
+    try {
+      sql = "SELECT c1, DISTINCT c2 FROM foo";
+      CalciteSqlParser.compileToPinotQuery(sql);
+      Assert.fail("Query should have failed compilation");
+    } catch (Exception e) {
+      Assert.assertTrue(e instanceof SqlCompilationException);
+      Assert.assertTrue(e.getCause() instanceof SqlParseException);
+      Assert.assertTrue(e.getCause().getMessage().contains("Encountered \", DISTINCT\" at line 1, column 10."));
+    }
+
+    // The following query although a valid SQL syntax is not
+    // very helpful since the result will be one row -- probably a
+    // a single random value from c1 and sum of c2.
+    // we can support this if underlying engine
+    // implements sum as a transform function which is not the case today
+    // this is a multi column distinct so we cant treat this query
+    // as having 2 independent functions -- sum(c2) should be an input
+    // into distinct and that can't happen unless it is implemented as a
+    // transform
+    try {
+      sql = "SELECT DISTINCT c1, sum(c2) FROM foo";
+      CalciteSqlParser.compileToPinotQuery(sql);
+      Assert.fail("Query should have failed compilation");
+    } catch (Exception e) {
+      Assert.assertTrue(e instanceof SqlCompilationException);
+      Assert.assertTrue(e.getMessage().contains("Syntax error: Use of DISTINCT with aggregation functions is not supported"));
+    }
+
+    // same reason as above
+    try {
+      sql = "SELECT DISTINCT sum(c1) FROM foo";
+      CalciteSqlParser.compileToPinotQuery(sql);
+      Assert.fail("Query should have failed compilation");
+    } catch (Exception e) {
+      Assert.assertTrue(e instanceof SqlCompilationException);
+      Assert.assertTrue(e.getMessage().contains("Syntax error: Use of DISTINCT with aggregation functions is not supported"));
+    }
+
+    // distinct with transform is supported since the output of
+    // transform can be piped into distinct function
+    sql = "SELECT DISTINCT add(col1,col2) FROM foo";
+    pinotQuery = CalciteSqlParser.compileToPinotQuery(sql);
+    selectListExpressions = pinotQuery.getSelectList();
+    Assert.assertEquals(selectListExpressions.size(), 1);
+    Assert.assertEquals(selectListExpressions.get(0).getType(), ExpressionType.FUNCTION);
+
+    distinctFunction = selectListExpressions.get(0).getFunctionCall();
+    Assert.assertEquals(distinctFunction.getOperator(), "DISTINCT");
+    Assert.assertEquals(distinctFunction.getOperands().size(), 1);
+
+    Function add = distinctFunction.getOperands().get(0).getFunctionCall();
+    Assert.assertEquals(add.getOperator(), "add");
+    Assert.assertEquals(add.getOperands().size(), 2);
+    c1 = add.getOperands().get(0).getIdentifier();
+    c2 = add.getOperands().get(1).getIdentifier();
+    Assert.assertEquals(c1.getName(), "col1");
+    Assert.assertEquals(c2.getName(), "col2");
   }
 }

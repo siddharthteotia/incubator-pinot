@@ -101,9 +101,9 @@ public class InstancePlanMakerImplV2 implements PlanMaker {
             _numGroupsLimit);
       } else {
         if (isFitForMetadataBasedPlan(brokerRequest, indexSegment)) {
-          return new MetadataBasedAggregationPlanNode(indexSegment, brokerRequest.getAggregationsInfo());
+          return new MetadataBasedAggregationPlanNode(indexSegment, brokerRequest);
         } else if (isFitForDictionaryBasedPlan(brokerRequest, indexSegment)) {
-          return new DictionaryBasedAggregationPlanNode(indexSegment, brokerRequest.getAggregationsInfo());
+          return new DictionaryBasedAggregationPlanNode(indexSegment, brokerRequest);
         } else {
           return new AggregationPlanNode(indexSegment, brokerRequest);
         }
