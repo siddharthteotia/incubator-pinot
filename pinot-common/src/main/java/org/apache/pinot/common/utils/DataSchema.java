@@ -40,6 +40,10 @@ public class DataSchema {
     _columnDataTypes = columnDataTypes;
   }
 
+  public String[] getColumnNames() {
+    return _columnNames;
+  }
+
   public int size() {
     return _columnNames.length;
   }

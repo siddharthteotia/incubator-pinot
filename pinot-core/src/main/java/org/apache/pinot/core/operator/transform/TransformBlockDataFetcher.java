@@ -19,11 +19,7 @@
 package org.apache.pinot.core.operator.transform;
 
 import java.io.Serializable;
-import org.apache.pinot.common.data.FieldSpec;
 import org.apache.pinot.common.data.FieldSpec.DataType;
-import org.apache.pinot.common.request.transform.TransformExpressionTree;
-import org.apache.pinot.common.utils.BytesUtils;
-import org.apache.pinot.common.utils.primitive.ByteArray;
 import org.apache.pinot.core.common.BlockValSet;
 import org.apache.pinot.core.segment.index.readers.Dictionary;
 
@@ -36,8 +32,12 @@ public class TransformBlockDataFetcher {
       TransformResultMetadata[] expressionResultMetadata) {
     _fetchers = new Fetcher[blockValSets.length];
     for (int i = 0; i < blockValSets.length; i++) {
-      _fetchers[i] = createFetcher(blockValSets[i], dictionaries[i],
-          expressionResultMetadata[i]);
+      if (dictionaries.length == 0 && expressionResultMetadata.length == 0) {
+        _fetchers[i] = createSVNoDictionaryFetcher(blockValSets[i]);
+      } else {
+        _fetchers[i] = createFetcher(blockValSets[i], dictionaries[i],
+            expressionResultMetadata[i]);
+      }
     }
   }
 
@@ -49,7 +49,32 @@ public class TransformBlockDataFetcher {
     return row;
   }
 
-  Fetcher createFetcher(BlockValSet blockValSet,
+  /**
+   * Create SV non-dictionary based fetcher
+   * @param blockValSet column value set
+   * @return fetcher
+   */
+  private Fetcher createSVNoDictionaryFetcher(BlockValSet blockValSet) {
+    switch (blockValSet.getValueType()) {
+      case INT:
+        return new SVIntValueFetcher(blockValSet.getIntValuesSV());
+      case LONG:
+        return new SVLongValueFetcher(blockValSet.getLongValuesSV());
+      case FLOAT:
+        return new SVFloatValueFetcher(blockValSet.getFloatValuesSV());
+      case DOUBLE:
+        return new SVDoubleValueFetcher(blockValSet.getDoubleValuesSV());
+      case BOOLEAN:
+      case STRING:
+        return new SVStringValueFetcher(blockValSet.getStringValuesSV());
+      case BYTES:
+        return new SVBytesValueFetcher(blockValSet.getBytesValuesSV());
+    }
+
+    throw new UnsupportedOperationException();
+  }
+
+  private Fetcher createFetcher(BlockValSet blockValSet,
       Dictionary dictionary,
       TransformResultMetadata expressionResultMetadata) {
     if (expressionResultMetadata.hasDictionary()) {

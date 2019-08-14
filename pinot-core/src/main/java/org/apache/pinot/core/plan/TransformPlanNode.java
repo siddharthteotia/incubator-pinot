@@ -18,16 +18,17 @@
  */
 package org.apache.pinot.core.plan;
 
-import static org.apache.pinot.core.query.selection.SelectionOperatorUtils.getSelectionColumns;
-
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import javax.annotation.Nonnull;
+import org.apache.pinot.common.data.FieldSpec;
 import org.apache.pinot.common.request.AggregationInfo;
 import org.apache.pinot.common.request.BrokerRequest;
 import org.apache.pinot.common.request.Selection;
@@ -37,6 +38,7 @@ import org.apache.pinot.core.indexsegment.IndexSegment;
 import org.apache.pinot.core.operator.transform.TransformOperator;
 import org.apache.pinot.common.function.AggregationFunctionType;
 import org.apache.pinot.core.query.aggregation.function.AggregationFunctionUtils;
+import org.apache.pinot.pql.parsers.pql2.ast.FunctionCallAstNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,7 +65,8 @@ public class TransformPlanNode implements PlanNode {
     _segmentName = indexSegment.getSegmentName();
     extractColumnsAndTransforms(brokerRequest, indexSegment);
     _projectionPlanNode =
-        new ProjectionPlanNode(indexSegment, _projectionColumns, new DocIdSetPlanNode(indexSegment, brokerRequest, _maxDocPerNextCall));
+        new ProjectionPlanNode(indexSegment, _projectionColumns,
+            new DocIdSetPlanNode(indexSegment, brokerRequest, _maxDocPerNextCall));
   }
 
   /**
@@ -76,7 +79,18 @@ public class TransformPlanNode implements PlanNode {
       IndexSegment indexSegment) {
     if (brokerRequest.isSetAggregationsInfo()) {
       for (AggregationInfo aggregationInfo : brokerRequest.getAggregationsInfo()) {
-        if (!aggregationInfo.getAggregationType().equalsIgnoreCase(AggregationFunctionType.COUNT.getName())) {
+        if (aggregationInfo.getAggregationType().equalsIgnoreCase(AggregationFunctionType.DISTINCT.getName())) {
+          // handle DISTINCT (col1, col2 ...) as an aggregate function
+          final String multiColumnExpression = AggregationFunctionUtils.getColumn(aggregationInfo);
+          final String[] distinctColumnExpressions = multiColumnExpression.split(FunctionCallAstNode.DISTINCT_MULTI_COLUMN_SEPARATOR);
+          int col = 0;
+          for (String distinctColumnExpr : distinctColumnExpressions) {
+            TransformExpressionTree transformExpressionTree = TransformExpressionTree.compileToExpressionTree(distinctColumnExpr);
+            transformExpressionTree.getColumns(_projectionColumns);
+            _expressionTrees.add(transformExpressionTree);
+          }
+        } else if (!aggregationInfo.getAggregationType().equalsIgnoreCase(AggregationFunctionType.COUNT.getName())) {
+          // handle all other aggregate functions (except count(*))
           String expression = AggregationFunctionUtils.getColumn(aggregationInfo);
           TransformExpressionTree transformExpressionTree = TransformExpressionTree.compileToExpressionTree(expression);
           transformExpressionTree.getColumns(_projectionColumns);

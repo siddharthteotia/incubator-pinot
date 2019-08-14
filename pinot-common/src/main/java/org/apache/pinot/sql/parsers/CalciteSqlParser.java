@@ -19,6 +19,7 @@
 package org.apache.pinot.sql.parsers;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -35,12 +36,19 @@ import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlNumericLiteral;
 import org.apache.calcite.sql.SqlOrderBy;
 import org.apache.calcite.sql.SqlSelect;
+import org.apache.calcite.sql.SqlSelectKeyword;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
+import org.apache.pinot.common.function.FunctionDefinitionRegistry;
+import org.apache.pinot.common.request.AggregationInfo;
 import org.apache.pinot.common.request.DataSource;
 import org.apache.pinot.common.request.Expression;
+import org.apache.pinot.common.request.ExpressionType;
+import org.apache.pinot.common.request.Function;
 import org.apache.pinot.common.request.PinotQuery;
 import org.apache.pinot.common.utils.request.RequestUtils;
+import org.apache.pinot.pql.parsers.Pql2Compiler;
+import org.apache.pinot.pql.parsers.pql2.ast.FunctionCallAstNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -145,12 +153,12 @@ public class CalciteSqlParser {
         DataSource dataSource = new DataSource();
         dataSource.setTableName(selectSqlNode.getFrom().toString());
         pinotQuery.setDataSource(dataSource);
-        pinotQuery.setSelectList(convertSelectList(selectSqlNode.getSelectList()));
+        pinotQuery.setSelectList(convertSelectList(selectSqlNode.getSelectList(), selectSqlNode.getModifierNode(SqlSelectKeyword.DISTINCT)));
         if (selectSqlNode.getWhere() != null) {
           pinotQuery.setFilterExpression(toExpression(selectSqlNode.getWhere()));
         }
         if (selectSqlNode.getGroup() != null) {
-          pinotQuery.setGroupByList(convertSelectList(selectSqlNode.getGroup()));
+          pinotQuery.setGroupByList(convertSelectList(selectSqlNode.getGroup(), null));
         }
         break;
       default:
@@ -174,13 +182,23 @@ public class CalciteSqlParser {
     return matcher.replaceAll("");
   }
 
-  private static List<Expression> convertSelectList(SqlNodeList selectList) {
+  private static List<Expression> convertSelectList(SqlNodeList selectList, SqlNode distinctNode) {
     List<Expression> selectExpr = new ArrayList<>();
+
+    if (distinctNode != null) {
+      if (!Pql2Compiler.ENABLE_DISTINCT) {
+        throw new SqlCompilationException("Support for DISTINCT is currently disabled in Pinot");
+      }
+      selectExpr.add(convertDistinctAndSelectListToFunctionExpression(selectList));
+      return selectExpr;
+    }
+
     final Iterator<SqlNode> iterator = selectList.iterator();
     while (iterator.hasNext()) {
       final SqlNode next = iterator.next();
       selectExpr.add(toExpression(next));
     }
+
     return selectExpr;
   }
 
@@ -211,6 +229,32 @@ public class CalciteSqlParser {
         throw new RuntimeException("Unknown node type: " + node.getKind());
     }
     return expression;
+  }
+
+  /**
+   * DISTINCT is implemented as an aggregation function so need to take the select list items
+   * and convert them into a single function expression for handing over to execution engine
+   * either as a PinotQuery or BrokerRequest via conversion
+   * @param selectList select list items
+   * @return DISTINCT function expression
+   */
+  private static Expression convertDistinctAndSelectListToFunctionExpression(final SqlNodeList selectList) {
+    final String functionName = FunctionCallAstNode.DISTINCT_FUNCTION_NAME;
+    final Expression functionExpression = RequestUtils.getFunctionExpression(functionName);
+    final Iterator<SqlNode> iterator = selectList.iterator();
+    while (iterator.hasNext()) {
+      final SqlNode next = iterator.next();
+      final Expression columnExpression = toExpression(next);
+      if (columnExpression.getType() == ExpressionType.FUNCTION) {
+        Function functionCall = columnExpression.getFunctionCall();
+        String function = functionCall.getOperator();
+        if (FunctionDefinitionRegistry.isAggFunc(function)) {
+          throw new SqlCompilationException("Syntax error: Use of DISTINCT with aggregation functions is not supported");
+        }
+      }
+      functionExpression.getFunctionCall().addToOperands(columnExpression);
+    }
+    return functionExpression;
   }
 
   private static Expression toExpression(SqlNode node) {

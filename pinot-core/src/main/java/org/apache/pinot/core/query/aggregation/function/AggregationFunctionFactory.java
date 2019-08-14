@@ -20,7 +20,10 @@ package org.apache.pinot.core.query.aggregation.function;
 
 import com.google.common.base.Preconditions;
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import org.apache.pinot.common.function.AggregationFunctionType;
+import org.apache.pinot.common.request.AggregationInfo;
+import org.apache.pinot.common.request.BrokerRequest;
 import org.apache.pinot.core.query.exception.BadQueryRequestException;
 
 
@@ -31,11 +34,16 @@ public class AggregationFunctionFactory {
   private AggregationFunctionFactory() {
   }
 
+
   /**
    * Given the name of the aggregation function, returns a new instance of the corresponding aggregation function.
+   * The limit is currently used for DISTINCT aggregation function. Unlike other aggregation functions,
+   * DISTINCT can produce multi-row resultset. So the user specificed limit in query needs to be
+   * passed down to function.
    */
   @Nonnull
-  public static AggregationFunction getAggregationFunction(@Nonnull String functionName) {
+  public static AggregationFunction getAggregationFunction(AggregationInfo aggregationInfo, BrokerRequest brokerRequest) {
+    String functionName = aggregationInfo.getAggregationType();
     try {
       String upperCaseFunctionName = functionName.toUpperCase();
       if (upperCaseFunctionName.startsWith("PERCENTILE")) {
@@ -104,6 +112,9 @@ public class AggregationFunctionFactory {
             return new DistinctCountHLLMVAggregationFunction();
           case DISTINCTCOUNTRAWHLLMV:
             return new DistinctCountRawHLLMVAggregationFunction();
+          case DISTINCT:
+            // function for selecting DISTINCT values across one or more columns
+            return new DistinctAggregationFunction(AggregationFunctionUtils.getColumn(aggregationInfo), brokerRequest.getLimit());
           default:
             throw new IllegalArgumentException();
         }

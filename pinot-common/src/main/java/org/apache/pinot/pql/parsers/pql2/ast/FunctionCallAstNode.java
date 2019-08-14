@@ -18,11 +18,14 @@
  */
 package org.apache.pinot.pql.parsers.pql2.ast;
 
+import com.google.common.base.Preconditions;
 import java.util.List;
 import org.apache.pinot.common.request.AggregationInfo;
+import org.apache.pinot.common.request.BrokerRequest;
 import org.apache.pinot.common.request.transform.TransformExpressionTree;
 import org.apache.pinot.common.utils.EqualityUtils;
 import org.apache.pinot.pql.parsers.Pql2CompilationException;
+import org.apache.pinot.pql.parsers.Pql2Compiler;
 
 
 /**
@@ -32,6 +35,11 @@ public class FunctionCallAstNode extends BaseAstNode {
   private final String _name;
   private String _expression;
   private boolean _isInSelectList;
+
+  public static final String DISTINCT_MULTI_COLUMN_SEPARATOR = ":";
+  public static final String COLUMN_KEY_IN_AGGREGATION_INFO = "column";
+  public static final String COUNT_FUNCTION_NAME = "count";
+  public static final String DISTINCT_FUNCTION_NAME = "distinct";
 
   public FunctionCallAstNode(String name, String expression) {
     _name = name;
@@ -75,22 +83,52 @@ public class FunctionCallAstNode extends BaseAstNode {
     return _expression;
   }
 
-  public AggregationInfo buildAggregationInfo() {
+  AggregationInfo buildAggregationInfo() {
     String expression;
     // COUNT aggregation function always works on '*'
-    if (_name.equalsIgnoreCase("count")) {
+    if (_name.equalsIgnoreCase(COUNT_FUNCTION_NAME)) {
       expression = "*";
     } else {
       List<? extends AstNode> children = getChildren();
-      if (children == null || children.size() != 1) {
-        throw new Pql2CompilationException("Aggregation function expects exact 1 argument");
+      if (children == null || children.size() < 1) {
+        throw new Pql2CompilationException("Aggregation function expects non-null argument");
       }
-      expression = TransformExpressionTree.getStandardExpression(children.get(0));
+      if (!_name.equalsIgnoreCase(DISTINCT_FUNCTION_NAME)) {
+        if (children.size() != 1) {
+          throw new Pql2CompilationException("Aggregation function expects exactly 1 argument as column name");
+        } else {
+          expression = TransformExpressionTree.getStandardExpression(children.get(0));
+        }
+      } else {
+        // DISTINCT
+        if (!Pql2Compiler.ENABLE_DISTINCT) {
+          throw new Pql2CompilationException("Support for DISTINCT is currently disabled");
+        }
+        if (children.size() == 1) {
+          // single column DISTINCT query
+          // e.g SELECT DISTINCT(col) FROM foo
+          expression = TransformExpressionTree.getStandardExpression(children.get(0));
+        } else {
+          // multi-column DISTINCT query
+          // e.g SELECT DISTINCT(col1, col2) FROM foo
+          // we will pass down the column expression to execution code
+          // as col1:col2
+          final StringBuilder distinctColumnExpr = new StringBuilder();
+          for (int i = 0; i < children.size() ; ++i) {
+            expression = TransformExpressionTree.getStandardExpression(children.get(i));
+            distinctColumnExpr.append(expression);
+            if (i <= children.size() - 2) {
+              distinctColumnExpr.append(DISTINCT_MULTI_COLUMN_SEPARATOR);
+            }
+          }
+          expression = distinctColumnExpr.toString();
+        }
+      }
     }
 
     AggregationInfo aggregationInfo = new AggregationInfo();
     aggregationInfo.setAggregationType(_name);
-    aggregationInfo.putToAggregationParams("column", expression);
+    aggregationInfo.putToAggregationParams(COLUMN_KEY_IN_AGGREGATION_INFO, expression);
     aggregationInfo.setIsInSelectList(_isInSelectList);
 
     return aggregationInfo;

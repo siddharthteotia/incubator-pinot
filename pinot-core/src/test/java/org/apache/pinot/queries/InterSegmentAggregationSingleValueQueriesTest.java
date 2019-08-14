@@ -21,9 +21,12 @@ package org.apache.pinot.queries;
 import java.io.Serializable;
 import java.util.function.Function;
 import org.apache.pinot.common.response.broker.BrokerResponseNative;
+import org.apache.pinot.common.response.broker.SelectionResults;
 import org.apache.pinot.common.utils.BytesUtils;
 import org.apache.pinot.core.plan.maker.InstancePlanMakerImplV2;
 import org.apache.pinot.core.startree.hll.HllUtil;
+import org.apache.pinot.pql.parsers.Pql2Compiler;
+import org.testng.Assert;
 import org.testng.annotations.Test;
 
 import static org.testng.Assert.*;
@@ -409,5 +412,40 @@ public class InterSegmentAggregationSingleValueQueriesTest extends BaseSingleVal
 
     brokerResponse = getBrokerResponseForQuery(query, new InstancePlanMakerImplV2(1000, 1000));
     assertTrue(brokerResponse.isNumGroupsLimitReached());
+  }
+
+  /**
+   * Test DISTINCT on single column multiple segment. Since the dataset
+   * is Avro files, the only thing we currently check
+   * for correctness is the actual number of DISTINCT
+   * records returned
+   */
+  @Test
+  public void testInterSegmentDistinctSingleColumn() {
+    Pql2Compiler.ENABLE_DISTINCT = true;
+    final String query = "SELECT DISTINCT(column1) FROM testTable LIMIT 1000000";
+    BrokerResponseNative brokerResponse = getBrokerResponseForQuery(query);
+    final SelectionResults selectionResults = brokerResponse.getSelectionResults();
+    Assert.assertEquals(selectionResults.getColumns().size(), 1);
+    Assert.assertEquals(selectionResults.getColumns().get(0), "column1");
+    Assert.assertEquals(selectionResults.getRows().size(), 6582);
+  }
+
+  /**
+   * Test DISTINCT on single column multiple segment. Since the dataset
+   * is Avro files, the only thing we currently check
+   * for correctness is the actual number of DISTINCT
+   * records returned
+   */
+  @Test
+  public void testInterSegmentDistinctMultiColumn() {
+    Pql2Compiler.ENABLE_DISTINCT = true;
+    final String query = "SELECT DISTINCT(column1, column3) FROM testTable LIMIT 1000000";
+    BrokerResponseNative brokerResponse = getBrokerResponseForQuery(query);
+    final SelectionResults selectionResults = brokerResponse.getSelectionResults();
+    Assert.assertEquals(selectionResults.getColumns().size(), 2);
+    Assert.assertEquals(selectionResults.getColumns().get(0), "column1");
+    Assert.assertEquals(selectionResults.getColumns().get(1), "column3");
+    Assert.assertEquals(selectionResults.getRows().size(), 21968);
   }
 }

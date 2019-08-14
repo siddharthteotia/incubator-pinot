@@ -227,15 +227,15 @@ public class SelectionOperator extends BaseOperator<IntermediateResultsBlock> {
       dataFetcher = new TransformBlockDataFetcher(_blockValSets, _dictionaries, _expressionResultMetadata);
       if (selectionOnly) {
         int docId = 0;
-        while (_rowEvents.size() < _limit && docId < transformBlock.getNumDocs()) {
+        while (docId < transformBlock.getNumDocs()) {
           Serializable[] row = dataFetcher.getRow(docId);
           _rowEvents.add(row);
           docId = docId + 1;
         }
-        if (_rowEvents.size() >= _limit) {
+        /*if (_rowEvents.size() >= _limit) {
           numDocsScanned += docId;
           break;
-        }
+        }*/
       } else {
         //Selection + orderby
         int docId = 0;
