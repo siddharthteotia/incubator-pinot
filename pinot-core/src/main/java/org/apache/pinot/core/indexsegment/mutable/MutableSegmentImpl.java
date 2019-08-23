@@ -39,6 +39,7 @@ import org.apache.pinot.core.io.reader.DataFileReader;
 import org.apache.pinot.core.io.readerwriter.PinotDataBufferMemoryManager;
 import org.apache.pinot.core.io.readerwriter.impl.FixedByteSingleColumnMultiValueReaderWriter;
 import org.apache.pinot.core.io.readerwriter.impl.FixedByteSingleColumnSingleValueReaderWriter;
+import org.apache.pinot.core.io.readerwriter.impl.VariableByteSingleColumnSingleValueReaderWriter;
 import org.apache.pinot.core.realtime.impl.RealtimeSegmentConfig;
 import org.apache.pinot.core.realtime.impl.RealtimeSegmentStatsHistory;
 import org.apache.pinot.core.realtime.impl.dictionary.MutableDictionary;
@@ -178,8 +179,7 @@ public class MutableSegmentImpl implements MutableSegment {
       if (fieldSpec.isSingleValueField()) {
         String allocationContext =
             buildAllocationContext(_segmentName, column, V1Constants.Indexes.UNSORTED_SV_FORWARD_INDEX_FILE_EXTENSION);
-        indexReaderWriter = new FixedByteSingleColumnSingleValueReaderWriter(_capacity, indexColumnSize, _memoryManager,
-            allocationContext);
+        indexReaderWriter = createSingleValueReaderWriter(fieldSpec.getDataType(), indexColumnSize, allocationContext);
       } else {
         // TODO: Start with a smaller capacity on FixedByteSingleColumnMultiValueReaderWriter and let it expand
         String allocationContext =
@@ -198,6 +198,23 @@ public class MutableSegmentImpl implements MutableSegment {
     // Metric aggregation can be enabled only if config is specified, and all dimensions have dictionary,
     // and no metrics have dictionary. If not enabled, the map returned is null.
     _recordIdMap = enableMetricsAggregationIfPossible(config, _schema, noDictionaryColumns);
+  }
+
+  private DataFileReader createSingleValueReaderWriter(FieldSpec.DataType dataType, int indexColumnSize, String allocationContext) {
+    switch (dataType) {
+      case INT:
+      case LONG:
+      case DOUBLE:
+      case FLOAT:
+      case BOOLEAN:
+        return new FixedByteSingleColumnSingleValueReaderWriter(_capacity, indexColumnSize, _memoryManager,
+            allocationContext);
+      case STRING:
+      case BYTES:
+        return new VariableByteSingleColumnSingleValueReaderWriter(0, _memoryManager, allocationContext, 100);
+      default:
+        throw new UnsupportedOperationException("Unexpected data type");
+    }
   }
 
   public SegmentPartitionConfig getSegmentPartitionConfig() {
@@ -320,6 +337,8 @@ public class MutableSegmentImpl implements MutableSegment {
             case DOUBLE:
               indexReaderWriter.setDouble(docId, (Double) value);
               break;
+            case STRING:
+              _indexReaderWriter.se
             default:
               throw new UnsupportedOperationException(
                   "Unsupported data type: " + dataType + " for no-dictionary column: " + column);
