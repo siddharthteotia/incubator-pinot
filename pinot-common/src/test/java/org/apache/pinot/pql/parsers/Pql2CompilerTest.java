@@ -449,6 +449,15 @@ public class Pql2CompilerTest {
 
   }
 
+  @Test
+  public void test() {
+    String query = "SELECT count(activity_id) FROM snapActivity WHERE contract_id = 18616904 AND timestamp BETWEEN 1553126400000 AND 1553129999999 AND year_month_day_hour = 2019032100 LIMIT 0";
+    COMPILER.compileToBrokerRequest(query);
+
+    query = "SELECT count(activity_id) FROM snapActivity WHERE contract_id = 615935005 AND timestamp BETWEEN 1568000264719 AND 1568605064719 GROUP BY year_month_day_hour TOP 2500";
+    COMPILER.compileToBrokerRequest(query);
+  }
+
   /**
    * Utility method to compile a PQL and test expected values for order-by
    *

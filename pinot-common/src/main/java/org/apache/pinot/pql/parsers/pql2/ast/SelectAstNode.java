@@ -175,4 +175,20 @@ public class SelectAstNode extends BaseAstNode {
       }
     }
   }
+
+  public boolean isHasTopClause() {
+    return _hasTopClause;
+  }
+
+  public int getTopN() {
+    return _topN;
+  }
+
+  public boolean isHasLimitClause() {
+    return _hasLimitClause;
+  }
+
+  public int getRecordLimit() {
+    return _recordLimit;
+  }
 }
