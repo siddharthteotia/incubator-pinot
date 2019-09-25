@@ -42,9 +42,11 @@ import org.apache.pinot.broker.routing.RoutingTableLookupRequest;
 import org.apache.pinot.broker.routing.TimeBoundaryService;
 import org.apache.pinot.common.config.TableNameBuilder;
 import org.apache.pinot.common.exception.QueryException;
+import org.apache.pinot.common.function.AggregationFunctionType;
 import org.apache.pinot.common.metrics.BrokerMeter;
 import org.apache.pinot.common.metrics.BrokerMetrics;
 import org.apache.pinot.common.metrics.BrokerQueryPhase;
+import org.apache.pinot.common.request.AggregationInfo;
 import org.apache.pinot.common.request.BrokerRequest;
 import org.apache.pinot.common.request.FilterOperator;
 import org.apache.pinot.common.request.FilterQuery;
@@ -211,7 +213,7 @@ public abstract class BaseBrokerRequestHandler implements BrokerRequestHandler {
 
     // Validate the request
     try {
-      validateRequest(brokerRequest);
+      validateRequest(brokerRequest, _queryResponseLimit);
     } catch (Exception e) {
       LOGGER.info("Caught exception while validating request {}: {}, {}", requestId, query, e.getMessage());
       requestStatistics.setErrorCode(QueryException.QUERY_VALIDATION_ERROR_CODE);
@@ -369,30 +371,57 @@ public abstract class BaseBrokerRequestHandler implements BrokerRequestHandler {
 
   /**
    * Broker side validation on the broker request.
-   * <p>Throw RuntimeException if query does not pass validation.
+   * <p>Throw exception if query does not pass validation.
    * <p>Current validations are:
    * <ul>
    *   <li>Value for 'TOP' for aggregation group-by query <= configured value</li>
    *   <li>Value for 'LIMIT' for selection query <= configured value</li>
+   *   <li>Unsupported DISTINCT queries</li>
    * </ul>
    */
-  private void validateRequest(BrokerRequest brokerRequest) {
-    if (brokerRequest.isSetAggregationsInfo() && brokerRequest.isSetGroupBy()) {
-      // aggregation with group by query
+  static void validateRequest(BrokerRequest brokerRequest, int queryResponseLimit) {
+    // verify LIMIT
+    // LIMIT is applicable to selection query or DISTINCT query
+    // LIMIT is store in BrokerRequest
+    int limit = brokerRequest.getLimit();
+    if (limit > queryResponseLimit) {
+      throw new RuntimeException(
+          "Value for 'LIMIT' (" + limit + ") exceeds maximum allowed value of " + queryResponseLimit);
+    }
+
+    boolean groupBy = false;
+
+    // verify TOP
+    if (brokerRequest.isSetGroupBy()) {
+      groupBy = true;
       long topN = brokerRequest.getGroupBy().getTopN();
-      if (topN > _queryResponseLimit) {
+      if (topN > queryResponseLimit) {
         throw new RuntimeException(
-            "Value for 'TOP' (" + topN + ") exceeds maximum allowed value of " + _queryResponseLimit);
+            "Value for 'TOP' (" + topN + ") exceeds maximum allowed value of " + queryResponseLimit);
       }
-    } else {
-      // selection query or aggregation only query
-      // LIMIT is applicable to selection query or DISTINCT query (which is a selection query from user's
-      // point of view) but we treat it as an aggregation query.
-      // the limit is also stored in broker request so use it for validation
-      int limit = brokerRequest.getLimit();
-      if (limit > _queryResponseLimit) {
-        throw new RuntimeException(
-            "Value for 'LIMIT' (" + limit + ") exceeds maximum allowed value of " + _queryResponseLimit);
+    }
+
+    // verify the following for DISTINCT queries:
+    // (1) User query does not have DISTINCT() along with any other aggregation function
+    // (2) User query does not have DISTINCT() along with ORDER BY
+    // (3) User query does not have DISTINCT() along with GROUP BY
+    if (brokerRequest.isSetAggregationsInfo()) {
+      List<AggregationInfo> aggregationInfos = brokerRequest.getAggregationsInfo();
+      int numAggFunctions = aggregationInfos.size();
+      for (AggregationInfo aggregationInfo : aggregationInfos) {
+        if (aggregationInfo.getAggregationType().equalsIgnoreCase(AggregationFunctionType.DISTINCT.getName())) {
+          if (numAggFunctions > 1) {
+            throw new UnsupportedOperationException("Aggregation functions cannot be used with DISTINCT");
+          }
+          if (groupBy) {
+            // TODO: Explore if DISTINCT should be supported with GROUP BY
+            throw new UnsupportedOperationException("DISTINCT with GROUP BY is currently not supported");
+          }
+          if (brokerRequest.isSetOrderBy()) {
+            // TODO: Add support for ORDER BY with DISTINCT
+            throw new UnsupportedOperationException("DISTINCT with ORDER BY is currently not supported");
+          }
+        }
       }
     }
   }
