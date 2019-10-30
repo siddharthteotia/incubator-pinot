@@ -481,10 +481,6 @@ public abstract class BaseBrokerRequestHandler implements BrokerRequestHandler {
             // TODO: Explore if DISTINCT should be supported with GROUP BY
             throw new UnsupportedOperationException("DISTINCT with GROUP BY is currently not supported");
           }
-          if (brokerRequest.isSetOrderBy()) {
-            // TODO: Add support for ORDER BY with DISTINCT
-            throw new UnsupportedOperationException("DISTINCT with ORDER BY is currently not supported");
-          }
         }
       }
     }

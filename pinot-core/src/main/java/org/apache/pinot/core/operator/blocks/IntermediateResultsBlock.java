@@ -268,10 +268,12 @@ public class IntermediateResultsBlock implements Block {
         setDataTableColumn(columnDataType, dataTableBuilder, columnIndex, keyColumn);
         columnIndex++;
       }
-      for (Object valueColumn : record.getValues()) {
-        ColumnDataType columnDataType = _dataSchema.getColumnDataType(columnIndex);
-        setDataTableColumn(columnDataType, dataTableBuilder, columnIndex, valueColumn);
-        columnIndex++;
+      if (record.getValues() != null) {
+        for (Object valueColumn : record.getValues()) {
+          ColumnDataType columnDataType = _dataSchema.getColumnDataType(columnIndex);
+          setDataTableColumn(columnDataType, dataTableBuilder, columnIndex, valueColumn);
+          columnIndex++;
+        }
       }
       dataTableBuilder.finishRow();
     }

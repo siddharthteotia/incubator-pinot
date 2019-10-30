@@ -28,10 +28,15 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.apache.pinot.common.exception.QueryException;
+import org.apache.pinot.common.function.AggregationFunctionType;
+import org.apache.pinot.common.request.AggregationInfo;
 import org.apache.pinot.common.request.BrokerRequest;
 import org.apache.pinot.core.common.Block;
 import org.apache.pinot.core.common.Operator;
+import org.apache.pinot.core.data.table.IndexedTable;
 import org.apache.pinot.core.operator.blocks.IntermediateResultsBlock;
+import org.apache.pinot.core.query.aggregation.AggregationFunctionContext;
+import org.apache.pinot.core.query.aggregation.function.DistinctAggregationFunction;
 import org.apache.pinot.core.query.reduce.CombineService;
 import org.apache.pinot.core.util.trace.TraceCallable;
 import org.apache.pinot.core.util.trace.TraceRunnable;
@@ -177,6 +182,18 @@ public class CombineOperator extends BaseOperator<IntermediateResultsBlock> {
           new IntermediateResultsBlock(QueryException.getException(QueryException.EXECUTION_TIMEOUT_ERROR, e));
     }
 
+    if (isDistinct()) {
+      AggregationFunctionContext[] mergedAggregationFunctionContexts = mergedBlock.getAggregationFunctionContexts();
+      if (mergedAggregationFunctionContexts != null) {
+        DistinctAggregationFunction distinctAggregationFunction = (DistinctAggregationFunction)mergedAggregationFunctionContexts[0].getAggregationFunction();
+        IndexedTable indexedTable = distinctAggregationFunction.getTable();
+        // if no ORDER BY, finish is NOOP (it only creates an iterator)
+        // if ORDER BY, then it resizes/trims but doesn't sort as we pass false
+        indexedTable.finish(false);
+        mergedBlock = new IntermediateResultsBlock(indexedTable);
+      }
+    }
+
     // Update execution statistics.
     ExecutionStatistics executionStatistics = new ExecutionStatistics();
     for (Operator operator : _operators) {
@@ -193,6 +210,19 @@ public class CombineOperator extends BaseOperator<IntermediateResultsBlock> {
     mergedBlock.setNumSegmentsMatched(executionStatistics.getNumSegmentsMatched());
 
     return mergedBlock;
+  }
+
+  private boolean isDistinct() {
+    if (_brokerRequest.isSetAggregationsInfo()) {
+      List<AggregationInfo> aggregationInfos = _brokerRequest.getAggregationsInfo();
+      if (aggregationInfos.size() == 1) {
+        AggregationInfo info = aggregationInfos.get(0);
+        if (info.getAggregationType().equalsIgnoreCase(AggregationFunctionType.DISTINCT.getName())) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   @Override

@@ -30,10 +30,7 @@ public class QueryValidationTest {
   public void testUnsupportedDistinctQueries() {
     Pql2Compiler compiler = new Pql2Compiler();
 
-    String pql = "SELECT DISTINCT(col1, col2) FROM foo ORDER BY col1, col2";
-    testUnsupportedQueriesHelper(compiler, pql, "DISTINCT with ORDER BY is currently not supported");
-
-    pql = "SELECT DISTINCT(col1, col2) FROM foo GROUP BY col1";
+    String pql = "SELECT DISTINCT(col1, col2) FROM foo GROUP BY col1";
     testUnsupportedQueriesHelper(compiler, pql, "DISTINCT with GROUP BY is currently not supported");
 
     pql = "SELECT sum(col1), min(col2), DISTINCT(col3, col4) FROM foo";

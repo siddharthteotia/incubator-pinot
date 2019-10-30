@@ -18,6 +18,7 @@
  */
 package org.apache.pinot.queries;
 
+import com.google.common.collect.Lists;
 import java.io.File;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -26,7 +27,6 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.pinot.common.data.FieldSpec;
@@ -34,19 +34,22 @@ import org.apache.pinot.common.data.Schema;
 import org.apache.pinot.common.response.broker.BrokerResponseNative;
 import org.apache.pinot.common.response.broker.SelectionResults;
 import org.apache.pinot.common.segment.ReadMode;
+import org.apache.pinot.common.utils.DataSchema;
 import org.apache.pinot.core.data.GenericRow;
 import org.apache.pinot.core.data.manager.SegmentDataManager;
 import org.apache.pinot.core.data.manager.offline.ImmutableSegmentDataManager;
 import org.apache.pinot.core.data.readers.GenericRowRecordReader;
 import org.apache.pinot.core.data.readers.RecordReader;
+import org.apache.pinot.core.data.table.IndexedTable;
 import org.apache.pinot.core.data.table.Key;
+import org.apache.pinot.core.data.table.Record;
+import org.apache.pinot.core.data.table.SimpleIndexedTable;
 import org.apache.pinot.core.indexsegment.IndexSegment;
 import org.apache.pinot.core.indexsegment.generator.SegmentGeneratorConfig;
 import org.apache.pinot.core.indexsegment.immutable.ImmutableSegment;
 import org.apache.pinot.core.indexsegment.immutable.ImmutableSegmentLoader;
 import org.apache.pinot.core.operator.blocks.IntermediateResultsBlock;
 import org.apache.pinot.core.operator.query.AggregationOperator;
-import org.apache.pinot.core.query.aggregation.DistinctTable;
 import org.apache.pinot.core.segment.creator.impl.SegmentIndexCreationDriverImpl;
 import org.apache.pinot.pql.parsers.Pql2Compiler;
 import org.testng.Assert;
@@ -297,18 +300,18 @@ public class DistinctQueriesTest extends BaseQueriesTest {
         // default: 10 unique rows should be returned
         query = "SELECT DISTINCT(add(INT_COL,LONG_COL)) FROM DistinctTestTable";
         innerSegmentTransformQueryTestHelper(query, 10, 1, new String[]{"add(INT_COL,LONG_COL)"},
-            new FieldSpec.DataType[]{FieldSpec.DataType.DOUBLE});
+            new DataSchema.ColumnDataType[]{DataSchema.ColumnDataType.DOUBLE});
 
         // default: 10 unique rows should be returned
         query = "SELECT DISTINCT(sub(LONG_COL,INT_COL)) FROM DistinctTestTable";
         innerSegmentTransformQueryTestHelper(query, 10, 2, new String[]{"sub(LONG_COL,INT_COL)"},
-            new FieldSpec.DataType[]{FieldSpec.DataType.DOUBLE});
+            new DataSchema.ColumnDataType[]{DataSchema.ColumnDataType.DOUBLE});
 
         // 100k unique rows should be returned
         query = "SELECT DISTINCT(add(INT_COL,LONG_COL),sub(LONG_COL,INT_COL)) FROM DistinctTestTable LIMIT 100000 ";
         innerSegmentTransformQueryTestHelper(query, 100000, 3,
             new String[]{"add(INT_COL,LONG_COL)", "sub(LONG_COL,INT_COL)"},
-            new FieldSpec.DataType[]{FieldSpec.DataType.DOUBLE, FieldSpec.DataType.DOUBLE});
+            new DataSchema.ColumnDataType[]{DataSchema.ColumnDataType.DOUBLE, DataSchema.ColumnDataType.DOUBLE});
       }
     } finally {
       destroySegments();
@@ -329,29 +332,37 @@ public class DistinctQueriesTest extends BaseQueriesTest {
     // verify resultset
     Assert.assertNotNull(operatorResult);
     Assert.assertEquals(operatorResult.size(), 1);
-    Assert.assertTrue(operatorResult.get(0) instanceof DistinctTable);
+    Assert.assertTrue(operatorResult.get(0) instanceof IndexedTable);
 
-    final DistinctTable distinctTable = (DistinctTable) operatorResult.get(0);
+    final SimpleIndexedTable indexedTable = (SimpleIndexedTable) operatorResult.get(0);
     Assert.assertEquals(_expectedResults.size(), NUM_UNIQUE_TUPLES);
-    Assert.assertEquals(distinctTable.size(), expectedSize);
+    Assert.assertEquals(indexedTable.size(), expectedSize);
 
-    final String[] columnNames = distinctTable.getColumnNames();
+    DataSchema dataSchema = indexedTable.getDataSchema();
+    final String[] columnNames = dataSchema.getColumnNames();
     Assert.assertEquals(columnNames.length, 4);
     Assert.assertEquals(columnNames[0], D1);
     Assert.assertEquals(columnNames[1], D2);
     Assert.assertEquals(columnNames[2], M1);
     Assert.assertEquals(columnNames[3], M2);
 
-    final FieldSpec.DataType[] dataTypes = distinctTable.getColumnTypes();
+    final DataSchema.ColumnDataType[] dataTypes = dataSchema.getColumnDataTypes();
     Assert.assertEquals(dataTypes.length, 4);
-    Assert.assertEquals(dataTypes[0], FieldSpec.DataType.STRING);
-    Assert.assertEquals(dataTypes[1], FieldSpec.DataType.STRING);
-    Assert.assertEquals(dataTypes[2], FieldSpec.DataType.INT);
-    Assert.assertEquals(dataTypes[3], FieldSpec.DataType.LONG);
+    Assert.assertEquals(dataTypes[0], DataSchema.ColumnDataType.STRING);
+    Assert.assertEquals(dataTypes[1], DataSchema.ColumnDataType.STRING);
+    Assert.assertEquals(dataTypes[2], DataSchema.ColumnDataType.INT);
+    Assert.assertEquals(dataTypes[3], DataSchema.ColumnDataType.LONG);
 
-    Iterator<Key> iterator = distinctTable.getIterator();
+    // Since the segment level execution doesn't call finish, the iterator should
+    // be null at this point. Also, since the test needs to verify the records,
+    // we explicitly call finish() now to get the iterator and check correctness
+    Assert.assertNull(indexedTable.iterator());
+
+    indexedTable.finish(false);
+    Iterator<Record> iterator = indexedTable.iterator();
+
     while (iterator.hasNext()) {
-      Key key = iterator.next();
+      Key key = iterator.next().getKey();
       Assert.assertEquals(key.getColumns().length, 4);
       Assert.assertTrue(_expectedResults.contains(key));
     }
@@ -363,7 +374,7 @@ public class DistinctQueriesTest extends BaseQueriesTest {
    * @param expectedSize expected result size
    */
   private void innerSegmentTransformQueryTestHelper(final String query, final int expectedSize, final int op,
-      final String[] columnNames, final FieldSpec.DataType[] columnTypes) {
+      final String[] columnNames, final DataSchema.ColumnDataType[] columnTypes) {
     // compile to broker request and directly run the operator
     AggregationOperator aggregationOperator = getOperatorForQuery(query);
     IntermediateResultsBlock resultsBlock = aggregationOperator.nextBlock();
@@ -372,19 +383,26 @@ public class DistinctQueriesTest extends BaseQueriesTest {
     // verify resultset
     Assert.assertNotNull(operatorResult);
     Assert.assertEquals(operatorResult.size(), 1);
-    Assert.assertTrue(operatorResult.get(0) instanceof DistinctTable);
+    Assert.assertTrue(operatorResult.get(0) instanceof IndexedTable);
 
-    final DistinctTable distinctTable = (DistinctTable) operatorResult.get(0);
-    Assert.assertEquals(distinctTable.size(), expectedSize);
+    final SimpleIndexedTable indexedTable = (SimpleIndexedTable) operatorResult.get(0);
+    Assert.assertEquals(indexedTable.size(), expectedSize);
 
-    Assert.assertEquals(distinctTable.getColumnNames().length, columnNames.length);
-    Assert.assertEquals(distinctTable.getColumnNames(), columnNames);
-    Assert.assertEquals(distinctTable.getColumnTypes().length, columnNames.length);
-    Assert.assertEquals(distinctTable.getColumnTypes(), columnTypes);
+    DataSchema dataSchema = indexedTable.getDataSchema();
+    Assert.assertEquals(dataSchema.getColumnNames(), columnNames);
+    Assert.assertEquals(dataSchema.getColumnDataTypes(), columnTypes);
 
-    Iterator<Key> iterator = distinctTable.getIterator();
+    // Since the segment level execution doesn't call finish, the iterator should
+    // be null at this point. Also, since the test needs to verify the records,
+    // we explicitly call finish() now to get the iterator and check correctness
+    Assert.assertNull(indexedTable.iterator());
+
+    indexedTable.finish(false);
+    Iterator<Record> iterator = indexedTable.iterator();
+
     while (iterator.hasNext()) {
-      Key key = iterator.next();
+      Record record = iterator.next();
+      Key key = record.getKey();
       Assert.assertEquals(key.getColumns().length, columnNames.length);
       if (op == 1) {
         Assert.assertTrue(_expectedAddTransformResults.contains(key));
@@ -492,7 +510,7 @@ public class DistinctQueriesTest extends BaseQueriesTest {
    * @throws Exception
    */
   @Test(dependsOnMethods = {"testDistinctInterSegmentInterServer"})
-  public void testDistinctInnerSegmentWithFilter()
+  public void testDistinctWithFilter()
       throws Exception {
     try {
       String tableName = TABLE_NAME + "WithFilter";
@@ -502,17 +520,20 @@ public class DistinctQueriesTest extends BaseQueriesTest {
           .addSingleValueDimension("City", FieldSpec.DataType.STRING).addMetric("SaleAmount", FieldSpec.DataType.INT)
           .build();
 
-      final String query1 = "SELECT DISTINCT(State, City) FROM " + tableName + " WHERE SaleAmount >= 200000";
-      final String query2 = "SELECT DISTINCT(State, City) FROM " + tableName + " WHERE SaleAmount >= 400000";
-      final String query3 =
-          "SELECT DISTINCT(State, City, SaleAmount) FROM " + tableName + " WHERE SaleAmount >= 200000";
-      final String query4 =
-          "SELECT DISTINCT(State, City, SaleAmount) FROM " + tableName + " WHERE SaleAmount >= 400000";
+      String query1 = "SELECT DISTINCT(State, City) FROM " + tableName + " WHERE SaleAmount >= 200000";
+      String query2 = "SELECT DISTINCT(State, City) FROM " + tableName + " WHERE SaleAmount >= 400000";
+      String query3 = "SELECT DISTINCT(State, City, SaleAmount) FROM " + tableName + " WHERE SaleAmount >= 200000";
+      String query4 = "SELECT DISTINCT(State, City, SaleAmount) FROM " + tableName + " WHERE SaleAmount >= 400000";
 
-      final Set<Key> q1ExpectedResults = new HashSet<>();
-      final Set<Key> q2ExpectedResults = new HashSet<>();
-      final Set<Key> q3ExpectedResults = new HashSet<>();
-      final Set<Key> q4ExpectedResults = new HashSet<>();
+      String query1OrderBy = query1 + " ORDER BY State, City LIMIT 100";
+      String query2OrderBy = query2 + " ORDER BY State, City LIMIT 100";
+      String query3OrderBy = query3 + " ORDER BY State, City, SaleAmount LIMIT 100";
+      String query4OrderBy = query4 + " ORDER BY State, City, SaleAmount LIMIT 100";
+
+      Set<Key> q1ExpectedResults = new HashSet<>();
+      Set<Key> q2ExpectedResults = new HashSet<>();
+      Set<Key> q3ExpectedResults = new HashSet<>();
+      Set<Key> q4ExpectedResults = new HashSet<>();
 
       final List<GenericRow> rows =
           createSimpleTable(q1ExpectedResults, q2ExpectedResults, q3ExpectedResults, q4ExpectedResults);
@@ -521,15 +542,46 @@ public class DistinctQueriesTest extends BaseQueriesTest {
         createSegment(schema, recordReader, SEGMENT_NAME_1, tableName);
         final ImmutableSegment segment = loadSegment(SEGMENT_NAME_1);
         _indexSegments.add(segment);
+        _segmentDataManagers =
+            Arrays.asList(new ImmutableSegmentDataManager(segment), new ImmutableSegmentDataManager(segment));
 
-        runAndVerifyFilterQuery(q1ExpectedResults, query1, new String[]{"State", "City"},
-            new FieldSpec.DataType[]{FieldSpec.DataType.STRING, FieldSpec.DataType.STRING});
-        runAndVerifyFilterQuery(q2ExpectedResults, query2, new String[]{"State", "City"},
-            new FieldSpec.DataType[]{FieldSpec.DataType.STRING, FieldSpec.DataType.STRING});
-        runAndVerifyFilterQuery(q3ExpectedResults, query3, new String[]{"State", "City", "SaleAmount"},
-            new FieldSpec.DataType[]{FieldSpec.DataType.STRING, FieldSpec.DataType.STRING, FieldSpec.DataType.INT});
-        runAndVerifyFilterQuery(q4ExpectedResults, query4, new String[]{"State", "City", "SaleAmount"},
-            new FieldSpec.DataType[]{FieldSpec.DataType.STRING, FieldSpec.DataType.STRING, FieldSpec.DataType.INT});
+        // without ORDER BY
+        runFilterQueryInnerSegment(q1ExpectedResults, query1, new String[]{"State", "City"},
+            new DataSchema.ColumnDataType[]{DataSchema.ColumnDataType.STRING, DataSchema.ColumnDataType.STRING});
+        runFilterQueryInnerSegment(q2ExpectedResults, query2, new String[]{"State", "City"},
+            new DataSchema.ColumnDataType[]{DataSchema.ColumnDataType.STRING, DataSchema.ColumnDataType.STRING});
+        runFilterQueryInnerSegment(q3ExpectedResults, query3, new String[]{"State", "City", "SaleAmount"},
+            new DataSchema.ColumnDataType[]{DataSchema.ColumnDataType.STRING, DataSchema.ColumnDataType.STRING, DataSchema.ColumnDataType.INT});
+        runFilterQueryInnerSegment(q4ExpectedResults, query4, new String[]{"State", "City", "SaleAmount"},
+            new DataSchema.ColumnDataType[]{DataSchema.ColumnDataType.STRING, DataSchema.ColumnDataType.STRING, DataSchema.ColumnDataType.INT});
+
+        // with ORDER BY
+        List<Key> sortedResults = new ArrayList<>();
+        sortedResults.add(new Key(new Object[]{"California", "Mountain View"}));
+        sortedResults.add(new Key(new Object[]{"California", "San Mateo"}));
+        sortedResults.add(new Key(new Object[]{"California", "Sunnyvale"}));
+        runFilterQueryInterSegmentWithOrderBy(query1OrderBy, sortedResults, new String[]{"State", "City"});
+
+        sortedResults = new ArrayList<>();
+        sortedResults.add(new Key(new Object[]{"California", "Mountain View"}));
+        sortedResults.add(new Key(new Object[]{"California", "San Mateo"}));
+        runFilterQueryInterSegmentWithOrderBy(query2OrderBy, sortedResults, new String[]{"State", "City"});
+
+        sortedResults = new ArrayList<>();
+        sortedResults.add(new Key(new Object[]{"California", "Mountain View", 200000}));
+        sortedResults.add(new Key(new Object[]{"California", "Mountain View", 700000}));
+        sortedResults.add(new Key(new Object[]{"California", "San Mateo", 400000}));
+        sortedResults.add(new Key(new Object[]{"California", "San Mateo", 500000}));
+        sortedResults.add(new Key(new Object[]{"California", "Sunnyvale", 300000}));
+        runFilterQueryInterSegmentWithOrderBy(query3OrderBy, sortedResults,
+            new String[]{"State", "City", "SaleAmount"});
+
+        sortedResults = new ArrayList<>();
+        sortedResults.add(new Key(new Object[]{"California", "Mountain View", 700000}));
+        sortedResults.add(new Key(new Object[]{"California", "San Mateo", 400000}));
+        sortedResults.add(new Key(new Object[]{"California", "San Mateo", 500000}));
+        runFilterQueryInterSegmentWithOrderBy(query4OrderBy, sortedResults,
+            new String[]{"State", "City", "SaleAmount"});
       }
     } finally {
       destroySegments();
@@ -543,27 +595,52 @@ public class DistinctQueriesTest extends BaseQueriesTest {
    * @param columnNames name of columns
    * @param types data types
    */
-  private void runAndVerifyFilterQuery(final Set<Key> expectedTable, final String query, String[] columnNames,
-      FieldSpec.DataType[] types) {
+  private void runFilterQueryInnerSegment(final Set<Key> expectedTable, final String query, String[] columnNames,
+      DataSchema.ColumnDataType[] types) {
     AggregationOperator aggregationOperator = getOperatorForQuery(query);
     IntermediateResultsBlock resultsBlock = aggregationOperator.nextBlock();
     List<Object> operatorResult = resultsBlock.getAggregationResult();
 
     Assert.assertNotNull(operatorResult);
     Assert.assertEquals(operatorResult.size(), 1);
-    Assert.assertTrue(operatorResult.get(0) instanceof DistinctTable);
+    Assert.assertTrue(operatorResult.get(0) instanceof IndexedTable);
 
-    final DistinctTable distinctTable = (DistinctTable) operatorResult.get(0);
-    Assert.assertEquals(distinctTable.size(), expectedTable.size());
-    Assert.assertEquals(distinctTable.getColumnNames(), columnNames);
-    Assert.assertEquals(distinctTable.getColumnTypes(), types);
+    final SimpleIndexedTable indexedTable = (SimpleIndexedTable) operatorResult.get(0);
+    Assert.assertEquals(indexedTable.size(), expectedTable.size());
 
-    Iterator<Key> iterator = distinctTable.getIterator();
+    DataSchema dataSchema = indexedTable.getDataSchema();
+    final String[] actualColumnNames = dataSchema.getColumnNames();
+    Assert.assertEquals(actualColumnNames, columnNames);
+
+    final DataSchema.ColumnDataType[] actualDataTypes = dataSchema.getColumnDataTypes();
+    Assert.assertEquals(actualDataTypes, types);
+
+    // Since the segment level execution doesn't call finish, the iterator should
+    // be null at this point. Also, since the test needs to verify the records,
+    // we explicitly call finish() now to get the iterator and check correctness
+    Assert.assertNull(indexedTable.iterator());
+
+    indexedTable.finish(false);
+    Iterator<Record> iterator = indexedTable.iterator();
 
     while (iterator.hasNext()) {
-      Key key = iterator.next();
+      Key key = iterator.next().getKey();
       Assert.assertEquals(key.getColumns().length, columnNames.length);
       Assert.assertTrue(expectedTable.contains(key));
+    }
+  }
+
+  private void runFilterQueryInterSegmentWithOrderBy(String query, List<Key> orderedResults, String[] columnNames) {
+    BrokerResponseNative brokerResponseNative = getBrokerResponseForQuery(query);
+    final SelectionResults selectionResults = brokerResponseNative.getSelectionResults();
+    Assert.assertEquals(selectionResults.getColumns(), Lists.newArrayList(columnNames));
+    List<Serializable[]> rows = selectionResults.getRows();
+    Assert.assertEquals(rows.size(), orderedResults.size());
+    int counter = 0;
+    for (Serializable[] row : rows) {
+      Assert.assertEquals(row.length, columnNames.length);
+      Key actualKey = new Key(row);
+      Assert.assertEquals(actualKey, orderedResults.get(counter++));
     }
   }
 
@@ -577,7 +654,6 @@ public class DistinctQueriesTest extends BaseQueriesTest {
    */
   private List<GenericRow> createSimpleTable(final Set<Key> q1ExpectedResults, final Set<Key> q2ExpectedResults,
       final Set<Key> q3ExpectedResults, final Set<Key> q4ExpectedResults) {
-    final ThreadLocalRandom random = ThreadLocalRandom.current();
     final int numRows = 10;
     final List<GenericRow> rows = new ArrayList<>(numRows);
     Object[] columns;
