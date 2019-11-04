@@ -35,8 +35,11 @@ import java.util.concurrent.TimeUnit;
 import org.apache.commons.io.FileUtils;
 import org.apache.pinot.common.data.FieldSpec;
 import org.apache.pinot.common.data.Schema;
+import org.apache.pinot.common.response.BrokerResponse;
+import org.apache.pinot.common.segment.ReadMode;
 import org.apache.pinot.core.data.GenericRow;
 import org.apache.pinot.core.data.manager.SegmentDataManager;
+import org.apache.pinot.core.data.manager.offline.ImmutableSegmentDataManager;
 import org.apache.pinot.core.data.readers.GenericRowRecordReader;
 import org.apache.pinot.core.data.readers.RecordReader;
 import org.apache.pinot.core.indexsegment.IndexSegment;
@@ -65,8 +68,9 @@ public class TestTextSearchPerf extends BaseQueriesTest {
   private static final String QUERY_LOG_STRING_COL_NAME = "QUERY_LOG_STRING_COL";
   private static final String SKILLS_TEXT_COL_NAME = "SKILLS_TEXT_COL";
   private static final String SKILLS_STRING_COL_NAME = "SKILLS_STRING_COL";
-  private static final List<String> textSearchColumns = new ArrayList<>();
+  private static final List<String> textIndexCreationColumns = new ArrayList<>();
   private static final List<String> rawIndexCreationColumns = new ArrayList<>();
+  private static final List<String> invertedIndexCreationColumns = new ArrayList<>();
   private static final int INT_BASE_VALUE = 1000;
   private List<GenericRow> _rows = new ArrayList<>();
   private RecordReader _recordReader;
@@ -81,8 +85,8 @@ public class TestTextSearchPerf extends BaseQueriesTest {
     createPinotTableSchema();
     createTestData();
     _recordReader = new GenericRowRecordReader(_rows, _schema);
-    createSegment();
-    loadSegment();
+    createSegments();
+    loadSegments();
   }
 
   @Override
@@ -113,47 +117,78 @@ public class TestTextSearchPerf extends BaseQueriesTest {
 
   private void createPinotTableSchema() {
     _schema = new Schema.SchemaBuilder().setSchemaName(TABLE_NAME)
-        .addSingleValueDimension(ACCESS_LOG_STRING_COL_NAME, FieldSpec.DataType.STRING)
+        //.addSingleValueDimension(ACCESS_LOG_STRING_COL_NAME, FieldSpec.DataType.STRING)
         .addSingleValueDimension(ACCESS_LOG_TEXT_COL_NAME, FieldSpec.DataType.STRING)
+        //.addSingleValueDimension(QUERY_LOG_STRING_COL_NAME, FieldSpec.DataType.STRING)
         .addSingleValueDimension(QUERY_LOG_TEXT_COL_NAME, FieldSpec.DataType.STRING)
-        .addSingleValueDimension(QUERY_LOG_STRING_COL_NAME, FieldSpec.DataType.STRING)
+        //.addSingleValueDimension(SKILLS_STRING_COL_NAME, FieldSpec.DataType.STRING)
         .addSingleValueDimension(SKILLS_TEXT_COL_NAME, FieldSpec.DataType.STRING)
-        .addSingleValueDimension(SKILLS_STRING_COL_NAME, FieldSpec.DataType.STRING)
         .addMetric(INT_COL_NAME, FieldSpec.DataType.INT).build();
   }
 
-  private void createSegment()
+  private void createSegments() throws Exception {
+    Stopwatch stopwatch =  Stopwatch.createUnstarted();
+    stopwatch.start();
+    for (int i = 0; i < 10 ; i++) {
+      String segmentName = SEGMENT_NAME + i;
+      createSegment(segmentName);
+      System.out.println("created segment " + i);
+    }
+    stopwatch.stop();
+    System.out.println("total time to create segments: " + stopwatch.elapsed(TimeUnit.SECONDS));
+  }
+
+  private void loadSegments() throws Exception {
+    Stopwatch stopwatch = Stopwatch.createUnstarted();
+    stopwatch.start();
+    for (int i = 0; i < 10; i++) {
+      String segmentName = SEGMENT_NAME + i;
+      loadSegment(segmentName);
+      System.out.println("loaded segment " + i);
+    }
+    stopwatch.stop();
+    System.out.println("total time to load segments: " + stopwatch.elapsed(TimeUnit.SECONDS));
+  }
+
+  private void createSegment(String segmentName)
       throws Exception {
-    textSearchColumns.add(ACCESS_LOG_TEXT_COL_NAME);
-    textSearchColumns.add(QUERY_LOG_TEXT_COL_NAME);
-    textSearchColumns.add(SKILLS_TEXT_COL_NAME);
-    rawIndexCreationColumns.addAll(textSearchColumns);
+    textIndexCreationColumns.add(ACCESS_LOG_TEXT_COL_NAME);
+    textIndexCreationColumns.add(QUERY_LOG_TEXT_COL_NAME);
+    textIndexCreationColumns.add(SKILLS_TEXT_COL_NAME);
+    rawIndexCreationColumns.addAll(textIndexCreationColumns);
+    //invertedIndexCreationColumns.add(ACCESS_LOG_STRING_COL_NAME);
+    //invertedIndexCreationColumns.add(QUERY_LOG_STRING_COL_NAME);
+    //invertedIndexCreationColumns.add(SKILLS_STRING_COL_NAME);
     SegmentGeneratorConfig segmentGeneratorConfig = new SegmentGeneratorConfig(_schema);
     segmentGeneratorConfig.setTableName(TABLE_NAME);
     segmentGeneratorConfig.setOutDir(INDEX_DIR.getAbsolutePath());
-    segmentGeneratorConfig.setSegmentName(SEGMENT_NAME);
+    segmentGeneratorConfig.setSegmentName(segmentName);
+    //segmentGeneratorConfig.setInvertedIndexCreationColumns(invertedIndexCreationColumns);
     segmentGeneratorConfig.setRawIndexCreationColumns(rawIndexCreationColumns);
-    segmentGeneratorConfig.setTextIndexCreationColumns(textSearchColumns);
+    segmentGeneratorConfig.setTextIndexCreationColumns(textIndexCreationColumns);
     segmentGeneratorConfig.setCheckTimeColumnValidityDuringGeneration(false);
 
     SegmentIndexCreationDriverImpl driver = new SegmentIndexCreationDriverImpl();
     driver.init(segmentGeneratorConfig, _recordReader);
     driver.build();
 
-    File segmentIndexDir = new File(INDEX_DIR.getAbsolutePath(), SEGMENT_NAME);
+    File segmentIndexDir = new File(INDEX_DIR.getAbsolutePath(), segmentName);
     if (!segmentIndexDir.exists()) {
       throw new IllegalStateException("Segment generation failed");
     }
   }
 
-  private void loadSegment()
+  private void loadSegment(String segmentName)
       throws Exception {
     IndexLoadingConfig indexLoadingConfig = new IndexLoadingConfig();
-    Set<String> textColumns = new HashSet<>();
-    textColumns.addAll(textSearchColumns);
+    Set<String> textColumns = new HashSet<>(textIndexCreationColumns);
     indexLoadingConfig.setTextIndexColumns(textColumns);
-    ImmutableSegment segment = ImmutableSegmentLoader.load(new File(INDEX_DIR, SEGMENT_NAME), indexLoadingConfig);
+    //Set<String> invertedIndexColumns = new HashSet<>(invertedIndexCreationColumns);
+    //indexLoadingConfig.setInvertedIndexColumns(invertedIndexColumns);
+    indexLoadingConfig.setReadMode(ReadMode.mmap);
+    ImmutableSegment segment = ImmutableSegmentLoader.load(new File(INDEX_DIR, segmentName), indexLoadingConfig);
     _indexSegments.add(segment);
+    _segmentDataManagers.add(new ImmutableSegmentDataManager(segment));
   }
 
   private void createTestData()
@@ -187,39 +222,72 @@ public class TestTextSearchPerf extends BaseQueriesTest {
     // apache access log has 1.3million log lines
     resourceUrl = getClass().getClassLoader().getResource("data/text_search_data/apache_access.txt");
     logFile = new File(resourceUrl.getFile());
+    String[] access_log = new String[1500000];
+    int logCount = 0;
+
     Random random = new Random();
     try (InputStream inputStream = new FileInputStream(logFile);
         BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
       String line;
-      int counter = 0;
       while ((line = reader.readLine()) != null) {
-        GenericRow row = new GenericRow();
-        row.putField(INT_COL_NAME, INT_BASE_VALUE + counter);
-        row.putField(ACCESS_LOG_STRING_COL_NAME, line);
-        row.putField(ACCESS_LOG_TEXT_COL_NAME, line);
-        if (counter >= skillCount) {
-          int index = random.nextInt(skillCount);
-          row.putField(SKILLS_TEXT_COL_NAME, skills[index]);
-          row.putField(SKILLS_STRING_COL_NAME, skills[index]);
-        } else {
-          row.putField(SKILLS_TEXT_COL_NAME, skills[counter]);
-          row.putField(SKILLS_STRING_COL_NAME, skills[counter]);
-        }
-        if (counter >= queryCount) {
-          int index = random.nextInt(queryCount);
-          row.putField(QUERY_LOG_TEXT_COL_NAME, queries[index]);
-          row.putField(QUERY_LOG_STRING_COL_NAME, queries[index]);
-        } else {
-          row.putField(QUERY_LOG_TEXT_COL_NAME, queries[counter]);
-          row.putField(QUERY_LOG_STRING_COL_NAME, queries[counter]);
-        }
-        _rows.add(row);
-        counter++;
+        access_log[logCount++] = line;
       }
     }
+
+    int counter = 0;
+    while (counter < 5000000) {
+      GenericRow row = new GenericRow();
+      row.putField(INT_COL_NAME, INT_BASE_VALUE + counter);
+      if (counter >= logCount) {
+        int index = random.nextInt(skillCount);
+        //row.putField(ACCESS_LOG_STRING_COL_NAME, access_log[index]);
+        row.putField(ACCESS_LOG_TEXT_COL_NAME, access_log[index]);
+      } else {
+        //row.putField(ACCESS_LOG_STRING_COL_NAME, access_log[logCount]);
+        row.putField(ACCESS_LOG_TEXT_COL_NAME, access_log[logCount]);
+      }
+      if (counter >= skillCount) {
+        int index = random.nextInt(skillCount);
+        //row.putField(SKILLS_STRING_COL_NAME, skills[index]);
+        row.putField(SKILLS_TEXT_COL_NAME, skills[index]);
+      } else {
+        //row.putField(SKILLS_STRING_COL_NAME, skills[counter]);
+        row.putField(SKILLS_TEXT_COL_NAME, skills[counter]);
+      }
+      if (counter >= queryCount) {
+        int index = random.nextInt(queryCount);
+        //row.putField(QUERY_LOG_STRING_COL_NAME, queries[index]);
+        row.putField(QUERY_LOG_TEXT_COL_NAME, queries[index]);
+      } else {
+        //row.putField(QUERY_LOG_STRING_COL_NAME, queries[counter]);
+        row.putField(QUERY_LOG_TEXT_COL_NAME, queries[counter]);
+      }
+      _rows.add(row);
+      counter++;
+    }
+
+    System.out.println("Finished generating " + counter + " rows");
   }
 
   // TODO: move all these to JMH
+
+  @Test
+  public void testStress() {
+    String luceneQuery = "SELECT INT_COL FROM MyTable WHERE text_match(QUERY_LOG_TEXT_COL, '\"GROUP BY\"') LIMIT 3000000";
+    Stopwatch stopwatch = Stopwatch.createUnstarted();
+    interServer(luceneQuery, stopwatch, 5);
+  }
+
+  private void interServer(String query, Stopwatch stopwatch, int runs) {
+    System.out.println("Cumulative elapsed time over " + runs + " runs for query: " + query);
+    for (int i = 0; i < runs; i++) {
+      stopwatch.start();
+      BrokerResponse brokerResponse = getBrokerResponseForQuery(query);
+      stopwatch.stop();
+      System.out.println("Elapsed time: " + stopwatch.elapsed(TimeUnit.MILLISECONDS) + "ms");
+    }
+    System.out.println("Average elapsed time: " + ((double)stopwatch.elapsed(TimeUnit.MILLISECONDS))/runs + "ms");
+  }
 
   @Test
   public void testPerf1() {
