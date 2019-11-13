@@ -412,7 +412,7 @@ public class DistinctQueriesTest extends BaseQueriesTest {
    * that was build during data generation
    * @throws Exception
    */
-  @Test(dependsOnMethods = {"testDistinctInnerSegment"})
+  @Test
   public void testDistinctInterSegmentInterServer()
       throws Exception {
     try {
@@ -492,7 +492,7 @@ public class DistinctQueriesTest extends BaseQueriesTest {
    * Runs 4 different queries with predicates.
    * @throws Exception
    */
-  @Test(dependsOnMethods = {"testDistinctInterSegmentInterServer"})
+  @Test
   public void testDistinctInnerSegmentWithFilter()
       throws Exception {
     try {

@@ -270,6 +270,9 @@ public class SegmentColumnarIndexCreator implements SegmentCreator {
 
   @Override
   public void indexRow(GenericRow row) {
+    if (docIdCounter >= 4500000) {
+      System.out.println("indexed " + docIdCounter + " documents");
+    }
     for (String columnName : _forwardIndexCreatorMap.keySet()) {
       Object columnValueToIndex = row.getValue(columnName);
       if (columnValueToIndex == null) {

@@ -54,6 +54,7 @@ public class LuceneTextIndexReader implements TextIndexReader<LuceneTextIndexRea
       _indexDirectory = FSDirectory.open(indexFile.toPath());
       _indexReader = DirectoryReader.open(_indexDirectory);
       _indexSearcher = new IndexSearcher(_indexReader);
+      _indexSearcher.setQueryCache(null);
     } catch (Exception e) {
       throw new RuntimeException("Failed to instantiate Lucene text index reader. Error: " + e);
     }
@@ -72,7 +73,7 @@ public class LuceneTextIndexReader implements TextIndexReader<LuceneTextIndexRea
     try {
       Query query = _queryParser.parse(searchQuery);
       ConstantScoreQuery constantScoreQuery = new ConstantScoreQuery(query);
-      TopDocs topDocs = _indexSearcher.search(constantScoreQuery, Integer.MAX_VALUE);
+      TopDocs topDocs = _indexSearcher.search(constantScoreQuery, 6000);
       return new LuceneSearchResult(topDocs.scoreDocs, _indexSearcher);
     } catch (Exception e) {
       throw new RuntimeException("Error: failed to parse search query: " + searchQuery + " " + e);

@@ -58,7 +58,7 @@ import org.testng.annotations.Test;
 // TODO: move this to JMH based tests
 public class TestTextSearchPerf extends BaseQueriesTest {
 
-  private static final File INDEX_DIR = new File(FileUtils.getTempDirectory(), "TextSearchPerf");
+  private static final File INDEX_DIR = new File("/Users/steotia/lucene_test");
   private static final String TABLE_NAME = "MyTable";
   private static final String SEGMENT_NAME = TABLE_NAME + "_100000000_200000000";
   private static final String INT_COL_NAME = "INT_COL";
@@ -82,10 +82,16 @@ public class TestTextSearchPerf extends BaseQueriesTest {
   @BeforeClass
   public void setUp()
       throws Exception {
-    createPinotTableSchema();
-    createTestData();
-    _recordReader = new GenericRowRecordReader(_rows, _schema);
-    createSegments();
+    //createPinotTableSchema();
+    //createTestData();
+    //_recordReader = new GenericRowRecordReader(_rows, _schema);
+    //createSegments();
+    textIndexCreationColumns.add(ACCESS_LOG_TEXT_COL_NAME);
+    textIndexCreationColumns.add(QUERY_LOG_TEXT_COL_NAME);
+    textIndexCreationColumns.add(SKILLS_TEXT_COL_NAME);
+    invertedIndexCreationColumns.add(ACCESS_LOG_STRING_COL_NAME);
+    invertedIndexCreationColumns.add(QUERY_LOG_STRING_COL_NAME);
+    invertedIndexCreationColumns.add(SKILLS_STRING_COL_NAME);
     loadSegments();
   }
 
@@ -112,24 +118,24 @@ public class TestTextSearchPerf extends BaseQueriesTest {
       }
     }
     _indexSegments.clear();
-    FileUtils.deleteQuietly(INDEX_DIR);
+    //FileUtils.deleteQuietly(INDEX_DIR);
   }
 
   private void createPinotTableSchema() {
     _schema = new Schema.SchemaBuilder().setSchemaName(TABLE_NAME)
-        //.addSingleValueDimension(ACCESS_LOG_STRING_COL_NAME, FieldSpec.DataType.STRING)
-        .addSingleValueDimension(ACCESS_LOG_TEXT_COL_NAME, FieldSpec.DataType.STRING)
-        //.addSingleValueDimension(QUERY_LOG_STRING_COL_NAME, FieldSpec.DataType.STRING)
-        .addSingleValueDimension(QUERY_LOG_TEXT_COL_NAME, FieldSpec.DataType.STRING)
-        //.addSingleValueDimension(SKILLS_STRING_COL_NAME, FieldSpec.DataType.STRING)
-        .addSingleValueDimension(SKILLS_TEXT_COL_NAME, FieldSpec.DataType.STRING)
+        .addSingleValueDimension(ACCESS_LOG_STRING_COL_NAME, FieldSpec.DataType.STRING)
+        //.addSingleValueDimension(ACCESS_LOG_TEXT_COL_NAME, FieldSpec.DataType.STRING)
+        .addSingleValueDimension(QUERY_LOG_STRING_COL_NAME, FieldSpec.DataType.STRING)
+        //.addSingleValueDimension(QUERY_LOG_TEXT_COL_NAME, FieldSpec.DataType.STRING)
+        .addSingleValueDimension(SKILLS_STRING_COL_NAME, FieldSpec.DataType.STRING)
+        //.addSingleValueDimension(SKILLS_TEXT_COL_NAME, FieldSpec.DataType.STRING)
         .addMetric(INT_COL_NAME, FieldSpec.DataType.INT).build();
   }
 
   private void createSegments() throws Exception {
     Stopwatch stopwatch =  Stopwatch.createUnstarted();
     stopwatch.start();
-    for (int i = 0; i < 10 ; i++) {
+    for (int i = 0; i < 1 ; i++) {
       String segmentName = SEGMENT_NAME + i;
       createSegment(segmentName);
       System.out.println("created segment " + i);
@@ -141,7 +147,7 @@ public class TestTextSearchPerf extends BaseQueriesTest {
   private void loadSegments() throws Exception {
     Stopwatch stopwatch = Stopwatch.createUnstarted();
     stopwatch.start();
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 1; i++) {
       String segmentName = SEGMENT_NAME + i;
       loadSegment(segmentName);
       System.out.println("loaded segment " + i);
@@ -152,20 +158,14 @@ public class TestTextSearchPerf extends BaseQueriesTest {
 
   private void createSegment(String segmentName)
       throws Exception {
-    textIndexCreationColumns.add(ACCESS_LOG_TEXT_COL_NAME);
-    textIndexCreationColumns.add(QUERY_LOG_TEXT_COL_NAME);
-    textIndexCreationColumns.add(SKILLS_TEXT_COL_NAME);
     rawIndexCreationColumns.addAll(textIndexCreationColumns);
-    //invertedIndexCreationColumns.add(ACCESS_LOG_STRING_COL_NAME);
-    //invertedIndexCreationColumns.add(QUERY_LOG_STRING_COL_NAME);
-    //invertedIndexCreationColumns.add(SKILLS_STRING_COL_NAME);
     SegmentGeneratorConfig segmentGeneratorConfig = new SegmentGeneratorConfig(_schema);
     segmentGeneratorConfig.setTableName(TABLE_NAME);
     segmentGeneratorConfig.setOutDir(INDEX_DIR.getAbsolutePath());
     segmentGeneratorConfig.setSegmentName(segmentName);
-    //segmentGeneratorConfig.setInvertedIndexCreationColumns(invertedIndexCreationColumns);
-    segmentGeneratorConfig.setRawIndexCreationColumns(rawIndexCreationColumns);
-    segmentGeneratorConfig.setTextIndexCreationColumns(textIndexCreationColumns);
+    segmentGeneratorConfig.setInvertedIndexCreationColumns(invertedIndexCreationColumns);
+    //segmentGeneratorConfig.setRawIndexCreationColumns(rawIndexCreationColumns);
+    //segmentGeneratorConfig.setTextIndexCreationColumns(textIndexCreationColumns);
     segmentGeneratorConfig.setCheckTimeColumnValidityDuringGeneration(false);
 
     SegmentIndexCreationDriverImpl driver = new SegmentIndexCreationDriverImpl();
@@ -183,7 +183,7 @@ public class TestTextSearchPerf extends BaseQueriesTest {
     IndexLoadingConfig indexLoadingConfig = new IndexLoadingConfig();
     Set<String> textColumns = new HashSet<>(textIndexCreationColumns);
     indexLoadingConfig.setTextIndexColumns(textColumns);
-    //Set<String> invertedIndexColumns = new HashSet<>(invertedIndexCreationColumns);
+    Set<String> invertedIndexColumns = new HashSet<>(invertedIndexCreationColumns);
     //indexLoadingConfig.setInvertedIndexColumns(invertedIndexColumns);
     indexLoadingConfig.setReadMode(ReadMode.mmap);
     ImmutableSegment segment = ImmutableSegmentLoader.load(new File(INDEX_DIR, segmentName), indexLoadingConfig);
@@ -240,27 +240,27 @@ public class TestTextSearchPerf extends BaseQueriesTest {
       row.putField(INT_COL_NAME, INT_BASE_VALUE + counter);
       if (counter >= logCount) {
         int index = random.nextInt(skillCount);
-        //row.putField(ACCESS_LOG_STRING_COL_NAME, access_log[index]);
-        row.putField(ACCESS_LOG_TEXT_COL_NAME, access_log[index]);
+        row.putField(ACCESS_LOG_STRING_COL_NAME, access_log[index]);
+        //row.putField(ACCESS_LOG_TEXT_COL_NAME, access_log[index]);
       } else {
-        //row.putField(ACCESS_LOG_STRING_COL_NAME, access_log[logCount]);
-        row.putField(ACCESS_LOG_TEXT_COL_NAME, access_log[logCount]);
+        row.putField(ACCESS_LOG_STRING_COL_NAME, access_log[logCount]);
+        //row.putField(ACCESS_LOG_TEXT_COL_NAME, access_log[logCount]);
       }
       if (counter >= skillCount) {
         int index = random.nextInt(skillCount);
-        //row.putField(SKILLS_STRING_COL_NAME, skills[index]);
-        row.putField(SKILLS_TEXT_COL_NAME, skills[index]);
+        row.putField(SKILLS_STRING_COL_NAME, skills[index]);
+        //row.putField(SKILLS_TEXT_COL_NAME, skills[index]);
       } else {
-        //row.putField(SKILLS_STRING_COL_NAME, skills[counter]);
-        row.putField(SKILLS_TEXT_COL_NAME, skills[counter]);
+        row.putField(SKILLS_STRING_COL_NAME, skills[counter]);
+        //row.putField(SKILLS_TEXT_COL_NAME, skills[counter]);
       }
       if (counter >= queryCount) {
         int index = random.nextInt(queryCount);
-        //row.putField(QUERY_LOG_STRING_COL_NAME, queries[index]);
-        row.putField(QUERY_LOG_TEXT_COL_NAME, queries[index]);
+        row.putField(QUERY_LOG_STRING_COL_NAME, queries[index]);
+        //row.putField(QUERY_LOG_TEXT_COL_NAME, queries[index]);
       } else {
-        //row.putField(QUERY_LOG_STRING_COL_NAME, queries[counter]);
-        row.putField(QUERY_LOG_TEXT_COL_NAME, queries[counter]);
+        row.putField(QUERY_LOG_STRING_COL_NAME, queries[counter]);
+        //row.putField(QUERY_LOG_TEXT_COL_NAME, queries[counter]);
       }
       _rows.add(row);
       counter++;
@@ -271,20 +271,31 @@ public class TestTextSearchPerf extends BaseQueriesTest {
 
   // TODO: move all these to JMH
 
+
+
   @Test
-  public void testStress() {
-    String luceneQuery = "SELECT INT_COL FROM MyTable WHERE text_match(QUERY_LOG_TEXT_COL, '\"GROUP BY\"') LIMIT 3000000";
+  public void testLuceneStress() throws Exception {
+    String query = "SELECT INT_COL FROM MyTable WHERE text_match(QUERY_LOG_TEXT_COL, '\"GROUP BY\"') LIMIT 50000";
     Stopwatch stopwatch = Stopwatch.createUnstarted();
-    interServer(luceneQuery, stopwatch, 5);
+    interServer(query, stopwatch, 5000);
   }
 
-  private void interServer(String query, Stopwatch stopwatch, int runs) {
+  @Test
+  public void testRegexStress() throws Exception {
+    String query = "SELECT INT_COL FROM MyTable WHERE regexp_like(QUERY_LOG_STRING_COL, 'GROUP BY') LIMIT 50000";
+    Stopwatch stopwatch = Stopwatch.createUnstarted();
+    interServer(query, stopwatch, 5000);
+  }
+
+  private void interServer(String query, Stopwatch stopwatch, int runs) throws Exception {
     System.out.println("Cumulative elapsed time over " + runs + " runs for query: " + query);
     for (int i = 0; i < runs; i++) {
       stopwatch.start();
       BrokerResponse brokerResponse = getBrokerResponseForQuery(query);
       stopwatch.stop();
-      System.out.println("Elapsed time: " + stopwatch.elapsed(TimeUnit.MILLISECONDS) + "ms");
+      System.out.println("Elapsed time for query: " + i + " " + stopwatch.elapsed(TimeUnit.MILLISECONDS) + "ms");
+      System.out.println(new java.util.Date(System.currentTimeMillis()));
+      //Thread.sleep(10000);
     }
     System.out.println("Average elapsed time: " + ((double)stopwatch.elapsed(TimeUnit.MILLISECONDS))/runs + "ms");
   }
