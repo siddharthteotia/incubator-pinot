@@ -101,10 +101,12 @@ public class SqlToKqlConverter {
 
     // LIMIT
     if (selectAstNode.isHasLimitClause()) {
-      if (selectAstNode.getRecordLimit() > 0) {
-        genQuery.append(" | take ").append(selectAstNode.getRecordLimit());
-      } else {
-        genQuery.append(" | take ").append(10);
+      if (!selectList.startsWith("count")) {
+        if (selectAstNode.getRecordLimit() > 0) {
+          genQuery.append(" | take ").append(selectAstNode.getRecordLimit());
+        } else {
+          genQuery.append(" | take ").append(10);
+        }
       }
     }
 
@@ -182,7 +184,7 @@ public class SqlToKqlConverter {
         operator = "==";
       }
       filter.append(columnName).append(" ").append(operator).append(" ");
-      rewriteLiteral(literal, filter);
+      rewriteLiteral(columnName, literal, filter);
     } else if (predicateAstNode instanceof BetweenPredicateAstNode) {
       // handle BETWEEN
       List<? extends AstNode> betweenChildren = predicateAstNode.getChildren();
@@ -196,7 +198,7 @@ public class SqlToKqlConverter {
           // e.g timestamp BETWEEN 1000 AND 1001
           filter.append("..");
         }
-        rewriteLiteral(literal, filter);
+        rewriteLiteral(columnName, literal, filter);
         count++;
       }
       filter.append(") ");
@@ -213,7 +215,7 @@ public class SqlToKqlConverter {
           // e.g timestamp IN (a,b,c,d)
           filter.append(",");
         }
-        rewriteLiteral(literal, filter);
+        rewriteLiteral(columnName, literal, filter);
         count++;
       }
       // finish the IN predicate
@@ -225,14 +227,18 @@ public class SqlToKqlConverter {
     }
   }
 
-  private void rewriteLiteral (LiteralAstNode literalAstNode, StringBuilder sb) {
+  private void rewriteLiteral (String column, LiteralAstNode literalAstNode, StringBuilder sb) {
     String literalValue = literalAstNode.getValueAsString();
     if (literalAstNode instanceof StringLiteralAstNode) {
       // quote string literals
       sb.append("\"").append(literalValue).append("\"");
     } else {
       // numeric literals
-      sb.append(literalValue);
+      if (column.contains("TIME_COL")) {
+        sb.append("unixtime_milliseconds_todatetime(").append(literalValue).append(")");
+      } else {
+        sb.append(literalValue);
+      }
     }
   }
 
