@@ -812,10 +812,10 @@ public class PinotDataAndQueryAnonymizer {
         }
       }
 
-      if (selectAstNode.isHasLimitClause()) {
-        genQuery.append("LIMIT ").append(selectAstNode.getRecordLimit());
-      } else if (selectAstNode.isHasTopClause()) {
+      if (selectAstNode.isHasTopClause()) {
         genQuery.append("TOP ").append(selectAstNode.getTopN());
+      } else if (selectAstNode.isHasLimitClause()) {
+        genQuery.append("LIMIT ").append(selectAstNode.getRecordLimit());
       }
 
       String result = genQuery.toString().trim();
