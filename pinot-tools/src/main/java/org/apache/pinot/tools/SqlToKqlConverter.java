@@ -77,7 +77,7 @@ public class SqlToKqlConverter {
     StringBuilder genQuery = new StringBuilder();
 
     // TABLE
-    genQuery.append("pinot_test");
+    genQuery.append("SearchApp");
 
     // WHERE
     if (filter != null) {
@@ -345,6 +345,6 @@ public class SqlToKqlConverter {
 
   public static void main (String [] args) throws Exception {
     SqlToKqlConverter converter = new SqlToKqlConverter();
-    converter.convert("/Users/steotia/Desktop/kusto/snapActivity/queryDir/broker_17725", "queries.generated");
+    converter.convert("/Users/steotia/Desktop/kusto/wvmx/queryDir", "queries.generated");
   }
 }
