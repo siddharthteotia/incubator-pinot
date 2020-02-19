@@ -1,3 +1,21 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 package org.apache.pinot.tools;
 
 import java.io.BufferedReader;
@@ -42,7 +60,7 @@ public class SqlToKqlConverter {
     while ((query = reader.readLine()) != null) {
       convertHelper(query, out);
       count++;
-      System.out.println("query: " + count);
+      //System.out.println("query: " + count);
     }
     out.flush();
   }
@@ -85,22 +103,29 @@ public class SqlToKqlConverter {
       genQuery.append(" | ").append(filter);
     }
 
-    // SUMMARIZE
+    // SUMMARIZE (GROUP BY with TOP N or TOP 10)
     if (groupBy != null) {
       selectList = selectList.trim();
       if (selectList.contains("count")) {
-        selectList = selectList.replaceAll("count\\(.*\\)", "agg_count = count()");
+        selectList = selectList.replaceAll("dcount\\(.*\\)", "distinct_count = dcount(DIMENSION_SV_COL3)");
       }
       genQuery.append(" | summarize ").append(" ").append(selectList).append(" by ").append(groupBy);
       if (selectAstNode.isHasTopClause()) {
-        genQuery.append(" | top ").append(selectAstNode.getTopN()).append(" ").append("by ").append("agg_count");
+        genQuery.append(" | top ").append(selectAstNode.getTopN()).append(" ").append("by ").append("distinct_count");
       } else {
         genQuery.append(" | top ").append(10);
+      }
+    } else {
+      // SELECT without GROUP BY -- use LIMIT N or LIMIT 10
+      if (selectAstNode.getRecordLimit() > 0) {
+        genQuery.append(" | take ").append(selectAstNode.getRecordLimit());
+      } else {
+        genQuery.append(" | take ").append(10);
       }
     }
 
     // LIMIT
-    if (selectAstNode.isHasLimitClause()) {
+    /*if (selectAstNode.isHasLimitClause()) {
       if (!selectList.startsWith("count")) {
         if (selectAstNode.getRecordLimit() > 0) {
           genQuery.append(" | take ").append(selectAstNode.getRecordLimit());
@@ -108,7 +133,7 @@ public class SqlToKqlConverter {
           genQuery.append(" | take ").append(10);
         }
       }
-    }
+    }*/
 
     // PROJECT
     if (selectList != null && groupBy == null) {
@@ -234,7 +259,7 @@ public class SqlToKqlConverter {
       sb.append("\"").append(literalValue).append("\"");
     } else {
       // numeric literals
-      if (column.contains("TIME_COL")) {
+      if (column.contains("TIME_SV_COL")) {
         sb.append("unixtime_milliseconds_todatetime(").append(literalValue).append(")");
       } else {
         sb.append(literalValue);
@@ -276,7 +301,7 @@ public class SqlToKqlConverter {
       String columnName = identifier.getName();
       if (parent instanceof FunctionCallAstNode) {
         // this column is part of a parent function expression in the select list
-        selectList.append(columnIndex);
+        selectList.append(columnName);
       } else {
         // this column is a standalone column in the select list
         // so simply add the derived column name to select list
@@ -315,6 +340,9 @@ public class SqlToKqlConverter {
       FunctionCallAstNode function = (FunctionCallAstNode)output;
       List<? extends AstNode> functionOperands = function.getChildren();
       String name = function.getName();
+      if (name.equalsIgnoreCase("distinctcount")) {
+        name = "dcount";
+      }
       selectList.append(name).append("(");
       int count = 0;
       for (AstNode functionOperand : functionOperands) {
