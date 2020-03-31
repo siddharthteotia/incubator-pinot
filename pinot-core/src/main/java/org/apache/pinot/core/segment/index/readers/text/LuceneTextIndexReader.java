@@ -139,30 +139,6 @@ public class LuceneTextIndexReader implements InvertedIndexReader<MutableRoaring
   }
 
   /**
-   * Lucene docIDs are not same as pinot docIDs. The internal implementation
-   * of Lucene can change the docIds and they are not guaranteed to be the
-   * same as how we expect -- strictly increasing docIDs as the documents
-   * are ingested during segment/index creation.
-   * Therefore, once the search query in Lucene returns the matching
-   * Lucene internal docIds, we can then get the corresponding pinot docID
-   * since we had stored them in Lucene as a non-indexable field.
-   * @param luceneDocIds matching docIDs returned by lucene search query
-   * @return bitmap containing pinot docIDs
-   *
-   * TODO: Explore optimizing this path to avoid building the second bitmap
-   */
-  private MutableRoaringBitmap getPinotDocIds(MutableRoaringBitmap luceneDocIds) {
-    IntIterator luceneDocIDIterator = luceneDocIds.getIntIterator();
-    MutableRoaringBitmap actualDocIDs = new MutableRoaringBitmap();
-    while (luceneDocIDIterator.hasNext()) {
-      int luceneDocId = luceneDocIDIterator.next();
-      int pinotDocId = _docIdTranslator.getPinotDocId(luceneDocId);
-      actualDocIDs.add(pinotDocId);
-    }
-    return actualDocIDs;
-  }
-
-  /**
    * When we destroy the loaded ImmutableSegment, all the indexes
    * (for each column) are destroyed and as part of that
    * we release the text index
@@ -176,6 +152,14 @@ public class LuceneTextIndexReader implements InvertedIndexReader<MutableRoaring
     _docIdTranslator.close();
   }
 
+  /**
+   * Lucene docIDs are not same as pinot docIDs. The internal implementation
+   * of Lucene can change the docIds and they are not guaranteed to be the
+   * same as how we expect -- strictly increasing docIDs as the documents
+   * are ingested during segment/index creation.
+   * This class is used to map the luceneDocId (returned by the search query
+   * to the collector) to corresponding pinotDocId.
+   */
   static class DocIdTranslator implements Closeable {
     final PinotDataBuffer _buffer;
 
