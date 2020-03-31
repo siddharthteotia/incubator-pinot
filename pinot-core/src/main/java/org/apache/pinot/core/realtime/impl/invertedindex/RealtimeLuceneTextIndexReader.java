@@ -99,7 +99,7 @@ public class RealtimeLuceneTextIndexReader implements InvertedIndexReader<Mutabl
   public MutableRoaringBitmap getDocIds(Object value) {
     String searchQuery = (String) value;
     MutableRoaringBitmap docIDs = new MutableRoaringBitmap();
-    Collector docIDCollector = new LuceneDocIdCollector(docIDs);
+    Collector docIDCollector = new LuceneDocIdCollector(docIDs, null);
     IndexSearcher indexSearcher = null;
     try {
       Query query = _queryParser.parse(searchQuery);
