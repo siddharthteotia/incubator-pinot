@@ -105,4 +105,9 @@ public abstract class BaseDataSource extends DataSource {
   public String getOperatorName() {
     return _operatorName;
   }
+
+  @Override
+  public DataSource getDataSource(String child) {
+    throw new UnsupportedOperationException("operatiion only supported for struct data source");
+  }
 }

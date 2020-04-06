@@ -23,7 +23,10 @@ import java.io.File;
 import java.io.FileWriter;
 import java.util.List;
 import java.util.Map;
+import org.apache.pinot.spi.data.FieldSpec;
+import org.apache.pinot.spi.data.Schema;
 import org.apache.pinot.spi.data.readers.AbstractRecordReaderTest;
+import org.apache.pinot.spi.data.readers.GenericRow;
 import org.apache.pinot.spi.data.readers.RecordReader;
 import org.apache.pinot.spi.utils.JsonUtils;
 
@@ -50,6 +53,18 @@ public class JSONRecordReaderTest extends AbstractRecordReaderTest {
         }
         fileWriter.write(jsonRecord.toString());
       }
+    }
+  }
+
+  public static void main (String[] args) throws Exception {
+    JSONRecordReader jsonRecordReader = new JSONRecordReader();
+    Schema schema = new Schema.SchemaBuilder().addNested("person", FieldSpec.DataType.STRUCT).build();
+    File jsonFile = new File("/Users/steotia/Desktop/persons.json");
+    jsonRecordReader.init(jsonFile, schema, null);
+    GenericRow row = new GenericRow();
+    while (jsonRecordReader.hasNext()) {
+      row = jsonRecordReader.next(row);
+      System.out.println(row);
     }
   }
 }

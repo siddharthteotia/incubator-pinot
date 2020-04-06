@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import javax.annotation.Nullable;
 import org.apache.pinot.spi.data.FieldSpec;
+import org.apache.pinot.spi.data.NestedFieldSpec;
 import org.apache.pinot.spi.data.Schema;
 import org.apache.pinot.spi.data.readers.GenericRow;
 import org.apache.pinot.spi.data.readers.RecordReader;
@@ -85,11 +86,15 @@ public class JSONRecordReader implements RecordReader {
   public GenericRow next(GenericRow reuse) {
     Map<String, Object> record = _iterator.next();
     for (FieldSpec fieldSpec : _fieldSpecs) {
-      String fieldName = fieldSpec.getName();
-      Object value = record.get(fieldName);
-      // Allow default value for non-time columns
-      if (value != null || fieldSpec.getFieldType() != FieldSpec.FieldType.TIME) {
-        reuse.putField(fieldName, RecordReaderUtils.convert(fieldSpec, value));
+      if (fieldSpec instanceof NestedFieldSpec) {
+        reuse.putValue(fieldSpec.getName(), record);
+      } else {
+        String fieldName = fieldSpec.getName();
+        Object value = record.get(fieldName);
+        // Allow default value for non-time columns
+        if (value != null || fieldSpec.getFieldType() != FieldSpec.FieldType.TIME) {
+          reuse.putField(fieldName, RecordReaderUtils.convert(fieldSpec, value));
+        }
       }
     }
     return reuse;

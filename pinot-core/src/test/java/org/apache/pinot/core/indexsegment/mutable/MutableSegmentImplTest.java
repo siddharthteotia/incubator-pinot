@@ -36,6 +36,7 @@ import org.apache.pinot.core.segment.creator.impl.SegmentIndexCreationDriverImpl
 import org.apache.pinot.core.segment.index.metadata.SegmentMetadata;
 import org.apache.pinot.core.segment.index.readers.Dictionary;
 import org.apache.pinot.core.segment.virtualcolumn.VirtualColumnProviderFactory;
+import org.apache.pinot.plugin.inputformat.json.JSONRecordReader;
 import org.apache.pinot.segments.v1.creator.SegmentTestUtils;
 import org.apache.pinot.spi.data.FieldSpec;
 import org.apache.pinot.spi.data.Schema;
@@ -194,5 +195,28 @@ public class MutableSegmentImplTest {
   @AfterClass
   public void tearDown() {
     FileUtils.deleteQuietly(TEMP_DIR);
+  }
+
+  public static void main (String[] args) throws Exception {
+    File jsonFile = new File("/Users/steotia/Desktop/persons.json");
+    SegmentGeneratorConfig config =
+        SegmentTestUtils.getSegmentGeneratorConfigWithoutTimeColumn(jsonFile, TEMP_DIR, "tableWithNestedColumn");
+    SegmentIndexCreationDriver driver = new SegmentIndexCreationDriverImpl();
+    driver.init(config);
+    driver.build();
+
+    Schema schema = new Schema.SchemaBuilder().addNested("person", FieldSpec.DataType.STRUCT).build();
+
+    VirtualColumnProviderFactory.addBuiltInVirtualColumnsToSegmentSchema(schema, "segmentWithNestedColumn");
+    MutableSegmentImpl mutableSegmentImpl = MutableSegmentImplTestUtils
+        .createMutableSegmentImpl(schema, Collections.emptySet(), Collections.emptySet(), Collections.emptySet(),
+            false);
+
+    try (RecordReader recordReader = RecordReaderFactory.getRecordReader(FileFormat.JSON, jsonFile, schema, null)) {
+      GenericRow reuse = new GenericRow();
+      while (recordReader.hasNext()) {
+        mutableSegmentImpl.index(recordReader.next(reuse), null);
+      }
+    }
   }
 }

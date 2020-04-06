@@ -65,4 +65,7 @@ public abstract class DataSource extends BaseOperator {
    */
   @Nullable
   public abstract NullValueVectorReader getNullValueVector();
+
+  @Nullable
+  public abstract DataSource getDataSource(String child);
 }

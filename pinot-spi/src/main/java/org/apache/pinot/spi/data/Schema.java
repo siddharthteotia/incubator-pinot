@@ -59,6 +59,7 @@ public final class Schema {
   private static final Logger LOGGER = LoggerFactory.getLogger(Schema.class);
 
   private String _schemaName;
+  private final List<NestedFieldSpec> _nestedFieldSpecs = new ArrayList<>();
   private final List<DimensionFieldSpec> _dimensionFieldSpecs = new ArrayList<>();
   private final List<MetricFieldSpec> _metricFieldSpecs = new ArrayList<>();
   private TimeFieldSpec _timeFieldSpec;
@@ -185,6 +186,9 @@ public final class Schema {
       case DATE_TIME:
         _dateTimeNames.add(columnName);
         _dateTimeFieldSpecs.add((DateTimeFieldSpec) fieldSpec);
+        break;
+      case NESTED:
+        _nestedFieldSpecs.add((NestedFieldSpec) fieldSpec);
         break;
       default:
         throw new UnsupportedOperationException("Unsupported field type: " + fieldType);
@@ -429,6 +433,12 @@ public final class Schema {
               return false;
           }
           break;
+        case NESTED:
+          if (dataType != DataType.STRUCT && dataType != DataType.LIST) {
+            ctxLogger.info("Unsupported data type: {} in NESTED field: {}", dataType, fieldName);
+            return false;
+          }
+          break;
         default:
           ctxLogger.info("Unsupported field type: {} for field: {}", dataType, fieldName);
           return false;
@@ -562,6 +572,11 @@ public final class Schema {
 
     public SchemaBuilder addDateTime(String name, DataType dataType, String format, String granularity) {
       _schema.addField(new DateTimeFieldSpec(name, dataType, format, granularity));
+      return this;
+    }
+
+    public SchemaBuilder addNested(String name, DataType dataType) {
+      _schema.addField(new NestedFieldSpec(name, dataType, /* single value field */ true));
       return this;
     }
 
