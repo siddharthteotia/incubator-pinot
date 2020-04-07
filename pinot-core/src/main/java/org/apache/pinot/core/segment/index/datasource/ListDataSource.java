@@ -19,23 +19,18 @@ import org.apache.pinot.core.segment.index.readers.NullValueVectorReader;
 import org.apache.pinot.spi.data.FieldSpec;
 import org.apache.pinot.spi.data.NestedFieldSpec;
 
+public class ListDataSource extends DataSource {
 
-public class StructDataSource extends DataSource {
+  private final DataSource _childDataSource;
 
-  private final Map<String, DataSource> _childDataSources;
-
-  public StructDataSource(FieldSpec fieldSpec, Map<String, DataSource> childDataSources) {
+  public ListDataSource(FieldSpec fieldSpec, DataSource childDataSource) {
     Preconditions.checkArgument(fieldSpec instanceof NestedFieldSpec);
-    _childDataSources = childDataSources;
-  }
-
-  public void addChildDataSource(String child, DataSource dataSource) {
-    _childDataSources.put(child, dataSource);
+    _childDataSource = childDataSource;
   }
 
   @Override
   public DataSource getDataSource(String column) {
-    return _childDataSources.get(column);
+    return _childDataSource;
   }
 
   @Override

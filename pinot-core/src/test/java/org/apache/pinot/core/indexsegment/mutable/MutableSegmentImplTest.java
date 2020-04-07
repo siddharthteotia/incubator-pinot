@@ -31,8 +31,14 @@ import org.apache.pinot.core.common.DataSourceMetadata;
 import org.apache.pinot.core.indexsegment.generator.SegmentGeneratorConfig;
 import org.apache.pinot.core.indexsegment.immutable.ImmutableSegment;
 import org.apache.pinot.core.indexsegment.immutable.ImmutableSegmentLoader;
+import org.apache.pinot.core.io.reader.BaseSingleColumnSingleValueReader;
+import org.apache.pinot.core.io.reader.DataFileReader;
+import org.apache.pinot.core.io.reader.SingleColumnSingleValueReader;
 import org.apache.pinot.core.segment.creator.SegmentIndexCreationDriver;
 import org.apache.pinot.core.segment.creator.impl.SegmentIndexCreationDriverImpl;
+import org.apache.pinot.core.segment.index.datasource.ListDataSource;
+import org.apache.pinot.core.segment.index.datasource.MutableDataSource;
+import org.apache.pinot.core.segment.index.datasource.StructDataSource;
 import org.apache.pinot.core.segment.index.metadata.SegmentMetadata;
 import org.apache.pinot.core.segment.index.readers.Dictionary;
 import org.apache.pinot.core.segment.virtualcolumn.VirtualColumnProviderFactory;
@@ -53,6 +59,7 @@ import org.testng.annotations.Test;
 
 public class MutableSegmentImplTest {
   private static final String AVRO_FILE = "data/test_data-mv.avro";
+  private static final String JSON_FILE = "data/person.json";
   private static final File TEMP_DIR = new File(FileUtils.getTempDirectory(), "MutableSegmentImplTest");
 
   private Schema _schema;
@@ -197,26 +204,79 @@ public class MutableSegmentImplTest {
     FileUtils.deleteQuietly(TEMP_DIR);
   }
 
-  public static void main (String[] args) throws Exception {
-    File jsonFile = new File("/Users/steotia/Desktop/persons.json");
-    SegmentGeneratorConfig config =
-        SegmentTestUtils.getSegmentGeneratorConfigWithoutTimeColumn(jsonFile, TEMP_DIR, "tableWithNestedColumn");
-    SegmentIndexCreationDriver driver = new SegmentIndexCreationDriverImpl();
-    driver.init(config);
-    driver.build();
-
+  @Test
+  public void testNestedDataSource() throws Exception {
+    URL resourceUrl = MutableSegmentImplTest.class.getClassLoader().getResource(JSON_FILE);
+    Assert.assertNotNull(resourceUrl);
+    File jsonFile = new File(resourceUrl.getFile());
     Schema schema = new Schema.SchemaBuilder().addNested("person", FieldSpec.DataType.STRUCT).build();
-
     VirtualColumnProviderFactory.addBuiltInVirtualColumnsToSegmentSchema(schema, "segmentWithNestedColumn");
     MutableSegmentImpl mutableSegmentImpl = MutableSegmentImplTestUtils
         .createMutableSegmentImpl(schema, Collections.emptySet(), Collections.emptySet(), Collections.emptySet(),
             false);
-
     try (RecordReader recordReader = RecordReaderFactory.getRecordReader(FileFormat.JSON, jsonFile, schema, null)) {
       GenericRow reuse = new GenericRow();
       while (recordReader.hasNext()) {
         mutableSegmentImpl.index(recordReader.next(reuse), null);
       }
     }
+
+    DataSource rootDataSource = mutableSegmentImpl.getDataSource("person");
+    Assert.assertNotNull(rootDataSource);
+    Assert.assertTrue(rootDataSource instanceof StructDataSource);
+    DataSource nameDataSource = rootDataSource.getDataSource("person.name");
+    Assert.assertNotNull(nameDataSource);
+    Assert.assertTrue(nameDataSource instanceof MutableDataSource);
+    DataSource ageDataSource = rootDataSource.getDataSource("person.age");
+    Assert.assertNotNull(ageDataSource);
+    Assert.assertTrue(ageDataSource instanceof MutableDataSource);
+    DataSource salaryDataSource = rootDataSource.getDataSource("person.salary");
+    Assert.assertNotNull(salaryDataSource);
+    Assert.assertTrue(salaryDataSource instanceof MutableDataSource);
+    DataSource addressesDataSource = rootDataSource.getDataSource("person.addresses");
+    Assert.assertNotNull(addressesDataSource);
+    Assert.assertTrue(addressesDataSource instanceof ListDataSource);
+    DataSource addressDataSource = addressesDataSource.getDataSource("");
+    Assert.assertNotNull(addressDataSource);
+    Assert.assertTrue(addressDataSource instanceof StructDataSource);
+    DataSource aptDataSource = addressDataSource.getDataSource("person.addresses.apt");
+    Assert.assertNotNull(aptDataSource);
+    Assert.assertTrue(aptDataSource instanceof MutableDataSource);
+    DataSource zipDataSource = addressDataSource.getDataSource("person.addresses.apt");
+    Assert.assertNotNull(ageDataSource);
+    Assert.assertTrue(zipDataSource instanceof MutableDataSource);
+    DataSource phonesDataSource = addressDataSource.getDataSource("person.addresses.phones");
+    Assert.assertNotNull(phonesDataSource);
+    Assert.assertTrue(phonesDataSource instanceof ListDataSource);
+    DataSource phoneDataSource = phonesDataSource.getDataSource("");
+    Assert.assertNotNull(phoneDataSource);
+    Assert.assertTrue(phoneDataSource instanceof StructDataSource);
+    DataSource phoneNumberDataSource = phoneDataSource.getDataSource("person.addresses.phones.phonenumber");
+    Assert.assertNotNull(phoneNumberDataSource);
+    Assert.assertTrue(phoneNumberDataSource instanceof MutableDataSource);
+    DataSource typeDataSource = phoneDataSource.getDataSource("person.addresses.phones.type");
+    Assert.assertNotNull(typeDataSource);
+    Assert.assertTrue(typeDataSource instanceof MutableDataSource);
+
+    Assert.assertEquals(mutableSegmentImpl.getNumDocsIndexed(), 1);
+    Assert.assertEquals(mutableSegmentImpl.getNumFlattenedDocsIndexed(0), 6);
+
+    SingleColumnSingleValueReader fwdIndex = (SingleColumnSingleValueReader)phoneNumberDataSource.getForwardIndex();
+    Dictionary dictionary = phoneNumberDataSource.getDictionary();
+
+    Assert.assertEquals(dictionary.getIntValue(0), 123456);
+    Assert.assertEquals(dictionary.getIntValue(1), 565676);
+    Assert.assertEquals(dictionary.getIntValue(2), 212123244);
+    Assert.assertEquals(dictionary.getIntValue(3), 212121);
+    Assert.assertEquals(dictionary.getIntValue(4), 32322);
+    Assert.assertEquals(dictionary.getIntValue(5), 232424);
+
+    // this test fails here -- fix the bug in fwd index updater
+    Assert.assertEquals(fwdIndex.getInt(0), 0);
+    Assert.assertEquals(fwdIndex.getInt(1), 1);
+    Assert.assertEquals(fwdIndex.getInt(2), 2);
+    Assert.assertEquals(fwdIndex.getInt(3), 3);
+    Assert.assertEquals(fwdIndex.getInt(4), 4);
+    Assert.assertEquals(fwdIndex.getInt(5), 5);
   }
 }

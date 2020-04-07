@@ -1,0 +1,40 @@
+{
+  "name": "john",
+  "age": 25,
+  "salary": 100000,
+  "addresses": [{
+    "apt": 1012,
+    "zip": 94404,
+    "phones": [{
+      "phonenumber": 123456,
+      "type": "mobile"
+    },
+      {
+        "phonenumber": 565676,
+        "type": "work"
+      },
+      {
+        "phonenumber": 212123244,
+        "type": "emergency"
+      }
+    ]
+  },
+    {
+      "apt": 1022,
+      "zip": 94402,
+      "phones": [{
+        "phonenumber": 212121,
+        "type": "mobile"
+      },
+        {
+          "phonenumber": 32322,
+          "type": "work"
+        },
+        {
+          "phonenumber": 232424,
+          "type": "landline"
+        }
+      ]
+    }
+  ]
+}
