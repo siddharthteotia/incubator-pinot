@@ -242,7 +242,7 @@ public class MutableSegmentImplTest {
     DataSource aptDataSource = addressDataSource.getDataSource("person.addresses.apt");
     Assert.assertNotNull(aptDataSource);
     Assert.assertTrue(aptDataSource instanceof MutableDataSource);
-    DataSource zipDataSource = addressDataSource.getDataSource("person.addresses.apt");
+    DataSource zipDataSource = addressDataSource.getDataSource("person.addresses.zip");
     Assert.assertNotNull(ageDataSource);
     Assert.assertTrue(zipDataSource instanceof MutableDataSource);
     DataSource phonesDataSource = addressDataSource.getDataSource("person.addresses.phones");
@@ -258,9 +258,12 @@ public class MutableSegmentImplTest {
     Assert.assertNotNull(typeDataSource);
     Assert.assertTrue(typeDataSource instanceof MutableDataSource);
 
-    Assert.assertEquals(mutableSegmentImpl.getNumDocsIndexed(), 1);
+    Assert.assertEquals(mutableSegmentImpl.getNumDocsIndexed(), 3);
     Assert.assertEquals(mutableSegmentImpl.getNumFlattenedDocsIndexed(0), 6);
+    Assert.assertEquals(mutableSegmentImpl.getNumFlattenedDocsIndexed(1), 1);
+    Assert.assertEquals(mutableSegmentImpl.getNumFlattenedDocsIndexed(2), 3);
 
+    // test dictionary and forward index for phone-number
     SingleColumnSingleValueReader fwdIndex = (SingleColumnSingleValueReader)phoneNumberDataSource.getForwardIndex();
     Dictionary dictionary = phoneNumberDataSource.getDictionary();
 
@@ -270,13 +273,153 @@ public class MutableSegmentImplTest {
     Assert.assertEquals(dictionary.getIntValue(3), 212121);
     Assert.assertEquals(dictionary.getIntValue(4), 32322);
     Assert.assertEquals(dictionary.getIntValue(5), 232424);
+    Assert.assertEquals(dictionary.getIntValue(6), 412482);
+    Assert.assertEquals(dictionary.getIntValue(7), 4374637);
+    Assert.assertEquals(dictionary.getIntValue(8), 132323);
 
-    // this test fails here -- fix the bug in fwd index updater
     Assert.assertEquals(fwdIndex.getInt(0), 0);
     Assert.assertEquals(fwdIndex.getInt(1), 1);
     Assert.assertEquals(fwdIndex.getInt(2), 2);
     Assert.assertEquals(fwdIndex.getInt(3), 3);
     Assert.assertEquals(fwdIndex.getInt(4), 4);
     Assert.assertEquals(fwdIndex.getInt(5), 5);
+    Assert.assertEquals(fwdIndex.getInt(6), 6);
+    // 4374637 phonenumber is repeated
+    Assert.assertEquals(fwdIndex.getInt(7), 7);
+    Assert.assertEquals(fwdIndex.getInt(8), 7);
+    Assert.assertEquals(fwdIndex.getInt(9), 8);
+
+    // test dictionary and forward index for phone-type
+    fwdIndex = (SingleColumnSingleValueReader)typeDataSource.getForwardIndex();
+    dictionary = typeDataSource.getDictionary();
+
+    Assert.assertEquals(dictionary.getStringValue(0), "mobile");
+    Assert.assertEquals(dictionary.getStringValue(1), "work");
+    Assert.assertEquals(dictionary.getStringValue(2), "emergency");
+    Assert.assertEquals(dictionary.getStringValue(3), "landline");
+
+    // john
+    Assert.assertEquals(fwdIndex.getInt(0), 0); // mobile
+    Assert.assertEquals(fwdIndex.getInt(1), 1); // work
+    Assert.assertEquals(fwdIndex.getInt(2), 2); // landline
+    Assert.assertEquals(fwdIndex.getInt(3), 0); // mobile
+    Assert.assertEquals(fwdIndex.getInt(4), 1); // work
+    Assert.assertEquals(fwdIndex.getInt(5), 3); // emergency
+    // sidd
+    Assert.assertEquals(fwdIndex.getInt(6), 0); // mobile
+    // abc
+    Assert.assertEquals(fwdIndex.getInt(7), 0); // mobile
+    Assert.assertEquals(fwdIndex.getInt(8), 0); // mobile
+    Assert.assertEquals(fwdIndex.getInt(9), 1); // work
+
+    // test dictionary and forward index for apt
+    fwdIndex = (SingleColumnSingleValueReader)aptDataSource.getForwardIndex();
+    dictionary = aptDataSource.getDictionary();
+
+    Assert.assertEquals(dictionary.getIntValue(0), 1012);
+    Assert.assertEquals(dictionary.getIntValue(1), 1022);
+    Assert.assertEquals(dictionary.getIntValue(2), 1000);
+    Assert.assertEquals(dictionary.getIntValue(3), 1073);
+    Assert.assertEquals(dictionary.getIntValue(4), 1017);
+
+    // john
+    Assert.assertEquals(fwdIndex.getInt(0), 0); // 1012
+    Assert.assertEquals(fwdIndex.getInt(1), 0);
+    Assert.assertEquals(fwdIndex.getInt(2), 0);
+    Assert.assertEquals(fwdIndex.getInt(3), 1); // 1022
+    Assert.assertEquals(fwdIndex.getInt(4), 1);
+    Assert.assertEquals(fwdIndex.getInt(5), 1);
+    // sidd
+    Assert.assertEquals(fwdIndex.getInt(6), 2); // 1000
+    // abc
+    Assert.assertEquals(fwdIndex.getInt(7), 3); // 1073
+    Assert.assertEquals(fwdIndex.getInt(8), 4); // 1017
+    Assert.assertEquals(fwdIndex.getInt(9), 4); // 1017
+
+    // test dictionary and forward index for zip
+    fwdIndex = (SingleColumnSingleValueReader)zipDataSource.getForwardIndex();
+    dictionary = zipDataSource.getDictionary();
+
+    Assert.assertEquals(dictionary.getIntValue(0), 94404);
+    Assert.assertEquals(dictionary.getIntValue(1), 94402);
+    Assert.assertEquals(dictionary.getIntValue(2), 95136);
+
+    // john
+    Assert.assertEquals(fwdIndex.getInt(0), 0); // 94404
+    Assert.assertEquals(fwdIndex.getInt(1), 0);
+    Assert.assertEquals(fwdIndex.getInt(2), 0);
+    Assert.assertEquals(fwdIndex.getInt(3), 1); // 94402
+    Assert.assertEquals(fwdIndex.getInt(4), 1);
+    Assert.assertEquals(fwdIndex.getInt(5), 1);
+    // sidd
+    Assert.assertEquals(fwdIndex.getInt(6), 2); // 95136
+    // abc
+    Assert.assertEquals(fwdIndex.getInt(7), 0); // 94404
+    Assert.assertEquals(fwdIndex.getInt(8), 0); // 94404
+    Assert.assertEquals(fwdIndex.getInt(9), 0); // 94404
+
+    // test dictionary and forward index for salary
+    fwdIndex = (SingleColumnSingleValueReader)salaryDataSource.getForwardIndex();
+    dictionary = salaryDataSource.getDictionary();
+
+    Assert.assertEquals(dictionary.getIntValue(0), 100000);
+    Assert.assertEquals(dictionary.getIntValue(1), 200000);
+
+    // john
+    Assert.assertEquals(fwdIndex.getInt(0), 0); // 100,000
+    Assert.assertEquals(fwdIndex.getInt(1), 0);
+    Assert.assertEquals(fwdIndex.getInt(2), 0);
+    Assert.assertEquals(fwdIndex.getInt(3), 0);
+    Assert.assertEquals(fwdIndex.getInt(4), 0);
+    Assert.assertEquals(fwdIndex.getInt(5), 0);
+    // sidd
+    Assert.assertEquals(fwdIndex.getInt(6), 1); // 200,000
+    // abc
+    Assert.assertEquals(fwdIndex.getInt(7), 1); // 200,000
+    Assert.assertEquals(fwdIndex.getInt(8), 1);
+    Assert.assertEquals(fwdIndex.getInt(9), 1);
+
+    // test dictionary and forward index for age
+    fwdIndex = (SingleColumnSingleValueReader)ageDataSource.getForwardIndex();
+    dictionary = ageDataSource.getDictionary();
+
+    Assert.assertEquals(dictionary.getIntValue(0), 25);
+    Assert.assertEquals(dictionary.getIntValue(1), 26);
+
+    // john
+    Assert.assertEquals(fwdIndex.getInt(0), 0); // 25
+    Assert.assertEquals(fwdIndex.getInt(1), 0);
+    Assert.assertEquals(fwdIndex.getInt(2), 0);
+    Assert.assertEquals(fwdIndex.getInt(3), 0);
+    Assert.assertEquals(fwdIndex.getInt(4), 0);
+    Assert.assertEquals(fwdIndex.getInt(5), 0);
+    // sidd
+    Assert.assertEquals(fwdIndex.getInt(6), 1); // 26
+    // abc
+    Assert.assertEquals(fwdIndex.getInt(7), 0); // 25
+    Assert.assertEquals(fwdIndex.getInt(8), 0);
+    Assert.assertEquals(fwdIndex.getInt(9), 0);
+
+    // test dictionary and forward index for name
+    fwdIndex = (SingleColumnSingleValueReader)nameDataSource.getForwardIndex();
+    dictionary = nameDataSource.getDictionary();
+
+    Assert.assertEquals(dictionary.getStringValue(0), "john");
+    Assert.assertEquals(dictionary.getStringValue(1), "sidd");
+    Assert.assertEquals(dictionary.getStringValue(2), "abc");
+
+    // john
+    Assert.assertEquals(fwdIndex.getInt(0), 0);
+    Assert.assertEquals(fwdIndex.getInt(1), 0);
+    Assert.assertEquals(fwdIndex.getInt(2), 0);
+    Assert.assertEquals(fwdIndex.getInt(3), 0);
+    Assert.assertEquals(fwdIndex.getInt(4), 0);
+    Assert.assertEquals(fwdIndex.getInt(5), 0);
+    // sidd
+    Assert.assertEquals(fwdIndex.getInt(6), 1);
+    // abc
+    Assert.assertEquals(fwdIndex.getInt(7), 2);
+    Assert.assertEquals(fwdIndex.getInt(8), 2);
+    Assert.assertEquals(fwdIndex.getInt(9), 2);
   }
 }

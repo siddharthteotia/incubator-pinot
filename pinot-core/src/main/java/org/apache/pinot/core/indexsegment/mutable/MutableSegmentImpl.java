@@ -120,6 +120,7 @@ public class MutableSegmentImpl implements MutableSegment {
   private final Map<String, RealtimeNullValueVectorReaderWriter> _nullValueVectorMap = new HashMap<>();
   private final AtomicIntegerArray _rootDocIdToFlattenedDocs;
   private final IdMap<FixedIntArray> _recordIdMap;
+  Map<String, Integer> _leafColumnToRowCount = new HashMap<>();
   private boolean _aggregateMetrics;
 
   private volatile int _numDocsIndexed = 0;
@@ -389,10 +390,8 @@ public class MutableSegmentImpl implements MutableSegment {
       }
 
       // Update number of document indexed at last to make the latest record queryable
-      _numFlattenedDocsIndexed += flattenedDocIdCounter.counter;
-      // TODO: we need to have these atomic (together, not individually)
-      _rootDocIdToFlattenedDocs.addAndGet(_numDocsIndexed, _numFlattenedDocsIndexed);
-      _numFlattenedDocsIndexed = 0;
+      _rootDocIdToFlattenedDocs.set(_numDocsIndexed, flattenedDocIdCounter.counter - _numFlattenedDocsIndexed);
+      _numFlattenedDocsIndexed = flattenedDocIdCounter.counter;
       canTakeMore = _numDocsIndexed++ < _capacity;
     } else {
       Preconditions
@@ -414,13 +413,14 @@ public class MutableSegmentImpl implements MutableSegment {
   }
 
   private Map<String, Object> updateDictionary(GenericRow row, FlattenedDocIdCounter flattenedDocIdCounter) {
-    Map<String, List<Object>> leafColumnInfoMap = new HashMap<>();
+    Map<String, Integer> leafColumnToRowCount = _leafColumnToRowCount;
     Map<Integer, Map<String, Object>> depthToColumns = new HashMap<>();
     Map<String, Object> dictIdMap = new HashMap<>();
     for (FieldSpec fieldSpec : _physicalFieldSpecs) {
       if (fieldSpec instanceof NestedFieldSpec) {
         updateDictionaryForNestedFieldSpec(fieldSpec, row.getValue(fieldSpec.getName()),
-            dictIdMap, leafColumnInfoMap, 0, depthToColumns, flattenedDocIdCounter);
+            dictIdMap, leafColumnToRowCount, 0, depthToColumns, flattenedDocIdCounter);
+        flattenedDocIdCounter.counter = leafColumnToRowCount.get(depthToColumns.get(1).entrySet().iterator().next().getKey());
       } else {
         String column = fieldSpec.getName();
         Object value = row.getValue(column);
@@ -620,23 +620,34 @@ public class MutableSegmentImpl implements MutableSegment {
   @Override
   public DataSource getDataSource(String column) {
     FieldSpec fieldSpec = _schema.getFieldSpecFor(column);
-    if (fieldSpec == null || fieldSpec.isVirtualColumn()) {
-      // Column is either added during ingestion, or was initiated with a virtual column provider
-      if (fieldSpec == null) {
-        // If the column was added during ingestion, we will construct the column provider based on its fieldSpec to provide values
-        fieldSpec = _newlyAddedColumnsFieldMap.get(column);
-        Preconditions.checkNotNull(fieldSpec, "FieldSpec for " + column + " should not be null");
-      }
-      // TODO: Refactor virtual column provider to directly generate data source
-      VirtualColumnContext virtualColumnContext = new VirtualColumnContext(fieldSpec, _numDocsIndexed);
-      VirtualColumnProvider virtualColumnProvider = VirtualColumnProviderFactory.buildProvider(virtualColumnContext);
-      return new ImmutableDataSource(virtualColumnProvider.buildMetadata(virtualColumnContext),
-          virtualColumnProvider.buildColumnIndexContainer(virtualColumnContext));
-    } else if (!(fieldSpec instanceof NestedFieldSpec)) {
-      return createScalarDataSource(column, fieldSpec, _numDocsIndexed);
+    if (column.contains(".")) {
+      // call for one of the leaves
+      // e.g getDataSource("person.age") -- for filter processing
+      // leaf column should not be in schema since we discover the schema
+      Preconditions.checkState(fieldSpec == null);
+      String root = column.substring(column.indexOf("."));
+      DataSource source = createNestedDataSource(_schema.getFieldSpecFor(root));
+      return source.getDataSource(column);
+    } else if (fieldSpec instanceof NestedFieldSpec) {
+      // call for root
+      // e.g getDataSource("person")  directly at root (mostly in tests and flatten)
+      return createNestedDataSource(fieldSpec);
     } else {
-      int numDocsIndexed = _numDocsIndexed - 1;
-      return createNestedDataSource(fieldSpec, numDocsIndexed);
+      if (fieldSpec == null || fieldSpec.isVirtualColumn()) {
+        // Column is either added during ingestion, or was initiated with a virtual column provider
+        if (fieldSpec == null) {
+          // If the column was added during ingestion, we will construct the column provider based on its fieldSpec to provide values
+          fieldSpec = _newlyAddedColumnsFieldMap.get(column);
+          Preconditions.checkNotNull(fieldSpec, "FieldSpec for " + column + " should not be null");
+        }
+        // TODO: Refactor virtual column provider to directly generate data source
+        VirtualColumnContext virtualColumnContext = new VirtualColumnContext(fieldSpec, _numDocsIndexed);
+        VirtualColumnProvider virtualColumnProvider = VirtualColumnProviderFactory.buildProvider(virtualColumnContext);
+        return new ImmutableDataSource(virtualColumnProvider.buildMetadata(virtualColumnContext),
+            virtualColumnProvider.buildColumnIndexContainer(virtualColumnContext));
+      } else {
+        return createScalarDataSource(column, fieldSpec, _numDocsIndexed);
+      }
     }
   }
 
@@ -964,16 +975,16 @@ public class MutableSegmentImpl implements MutableSegment {
    ******************************************************************/
 
   private int updateDictionaryForNestedFieldSpec(FieldSpec fieldSpec, Object val,
-      Map<String, Object> dictIdMap, Map<String, List<Object>> leafColumnInfoMap,
+      Map<String, Object> dictIdMap, Map<String, Integer> leafColumnToRowCount,
       int currentDepth, Map<Integer, Map<String, Object>> depthToColumns, FlattenedDocIdCounter flattenedDocIdCounter) {
     Preconditions.checkState(fieldSpec instanceof NestedFieldSpec);
     NestedFieldSpec nestedFieldSpec = (NestedFieldSpec)fieldSpec;
     String column = fieldSpec.getName();
     if (nestedFieldSpec.getDataType() == FieldSpec.DataType.STRUCT) {
-      return handleMapValue(column, val, nestedFieldSpec, dictIdMap, leafColumnInfoMap, currentDepth + 1,
+      return handleMapValue(column, val, nestedFieldSpec, dictIdMap, leafColumnToRowCount, currentDepth + 1,
           depthToColumns, flattenedDocIdCounter);
     } else if (nestedFieldSpec.getDataType() == FieldSpec.DataType.LIST) {
-      return handleListValue(column, val, nestedFieldSpec, dictIdMap, leafColumnInfoMap, currentDepth + 1,
+      return handleListValue(column, val, nestedFieldSpec, dictIdMap, leafColumnToRowCount, currentDepth + 1,
           depthToColumns, flattenedDocIdCounter);
     } else {
       throw new UnsupportedOperationException();
@@ -981,10 +992,10 @@ public class MutableSegmentImpl implements MutableSegment {
   }
 
   private int handleMapValue(String column, Object val, NestedFieldSpec nestedFieldSpec,
-      Map<String, Object> dictIdMap, Map<String, List<Object>> leafColumnInfoMap,
+      Map<String, Object> dictIdMap, Map<String, Integer> leafColumnToRowCount,
       int currentDepth, Map<Integer, Map<String, Object>> depthToColumns, FlattenedDocIdCounter flattenedDocIdCounter) {
     Map<String, Object> value = (Map<String, Object>)val;
-    int repetitionLevel = 0;
+    int repetitionLevel = 1;
     for (Map.Entry<String, Object> entry : value.entrySet()) {
       String childCol = column + "." + entry.getKey();
       Object childValue = entry.getValue();
@@ -994,13 +1005,10 @@ public class MutableSegmentImpl implements MutableSegment {
         nestedFieldSpec.addChildFieldSpec(childCol, childFieldSpec);
       }
       if (childFieldSpec instanceof NestedFieldSpec) {
-        repetitionLevel = updateDictionaryForNestedFieldSpec(childFieldSpec, childValue, dictIdMap, leafColumnInfoMap,
+        repetitionLevel = updateDictionaryForNestedFieldSpec(childFieldSpec, childValue, dictIdMap, leafColumnToRowCount,
             currentDepth + 1, depthToColumns, flattenedDocIdCounter);
         if (repetitionLevel > 1) {
-          addRepetitionToForwardIndex(currentDepth, repetitionLevel, depthToColumns, dictIdMap, flattenedDocIdCounter.counter + 1);
-          if (currentDepth > 1) {
-            flattenedDocIdCounter.counter += repetitionLevel;
-          }
+          addRepetitionToForwardIndex(currentDepth, repetitionLevel, depthToColumns, dictIdMap, leafColumnToRowCount);
         }
       } else {
         if (!_dictionaryMap.containsKey(childCol)) {
@@ -1024,16 +1032,17 @@ public class MutableSegmentImpl implements MutableSegment {
 
         depthToColumns.putIfAbsent(currentDepth, new HashMap<>());
         depthToColumns.get(currentDepth).put(childCol, childValue);
+        leafColumnToRowCount.putIfAbsent(childCol, 0);
 
         // update dictionary and forward index for leaf
-        updateDictFwdIdxForScalarFieldSpec(childFieldSpec, childValue, dictIdMap, flattenedDocIdCounter);
+        updateDictFwdIdxForScalarFieldSpec(childFieldSpec, childValue, dictIdMap, leafColumnToRowCount, currentDepth);
       }
     }
     return repetitionLevel;
   }
 
   private int handleListValue(String column, Object val, NestedFieldSpec nestedFieldSpec,
-      Map<String, Object> dictIdMap, Map<String, List<Object>> leafColumnInfoMap,
+      Map<String, Object> dictIdMap, Map<String, Integer> leafColumnToRowCount,
       int currentDepth, Map<Integer, Map<String, Object>> depthToColumns, FlattenedDocIdCounter flattenedDocIdCounter) {
     List<Object> values = (List<Object>)val;
     // don't support heterogeneous lists
@@ -1042,25 +1051,37 @@ public class MutableSegmentImpl implements MutableSegment {
     // list has exactly one child
     FieldSpec childFieldSpec = createChildFieldSpec(childCol, value);
     nestedFieldSpec.addChildFieldSpec(childCol, childFieldSpec);
-    int innerRepetition = 0;
+    int repetition = 0;
     if (value instanceof Map) {
+      // list of STRUCT
       for (Object object : values) {
-        innerRepetition = handleMapValue(column, object, (NestedFieldSpec)childFieldSpec, dictIdMap, leafColumnInfoMap,
+        int inner = handleMapValue(column, object, (NestedFieldSpec)childFieldSpec, dictIdMap, leafColumnToRowCount,
             currentDepth +  1, depthToColumns, flattenedDocIdCounter);
+        if (inner > 1) {
+          repetition += inner;
+        } else {
+          repetition++;
+        }
       }
     } else if (value instanceof List) {
+      // list of LIST
       for (Object object : values) {
-        innerRepetition = handleListValue(column, object, (NestedFieldSpec)childFieldSpec, dictIdMap, leafColumnInfoMap,
+        int inner = handleListValue(column, object, (NestedFieldSpec)childFieldSpec, dictIdMap, leafColumnToRowCount,
             currentDepth +  1, depthToColumns, flattenedDocIdCounter);
+        if (inner > 1) {
+          repetition += inner;
+        } else {
+          repetition++;
+        }
       }
     } else {
       // TODO: Lists of scalars
     }
-    return innerRepetition > 0 ? values.size() * innerRepetition : values.size();
+    return repetition;
   }
 
   private void updateDictFwdIdxForScalarFieldSpec(FieldSpec fieldSpec, Object value,
-      Map<String, Object> dictIdMap, FlattenedDocIdCounter flattenedDocIdCounter) {
+      Map<String, Object> dictIdMap, Map<String, Integer> leafColumnToRowCount, int currentDepth) {
     String column = fieldSpec.getName();
     BaseMutableDictionary dictionary = _dictionaryMap.get(column);
     BaseSingleColumnSingleValueReaderWriter indexReaderWriter =
@@ -1068,7 +1089,9 @@ public class MutableSegmentImpl implements MutableSegment {
     if (dictionary != null) {
       int dictId = dictionary.index(value);
       dictIdMap.put(column, dictId);
-      indexReaderWriter.setInt(flattenedDocIdCounter.counter++, dictId);
+      int rowIndex = leafColumnToRowCount.get(column);
+      indexReaderWriter.setInt(rowIndex, dictId);
+      leafColumnToRowCount.put(column, rowIndex + 1);
     } else {
       // TODO: handle no-dict leaf column
     }
@@ -1076,17 +1099,19 @@ public class MutableSegmentImpl implements MutableSegment {
 
   private void addRepetitionToForwardIndex(int currentDepth,
       int repetitionLevel, Map<Integer, Map<String, Object>> depthToColumns,
-      Map<String, Object> dictIdMap, int startIndex) {
+      Map<String, Object> dictIdMap, Map<String, Integer> leafColumnToRowCount) {
     Map<String, Object> leavesAtCurrentDepth = depthToColumns.get(currentDepth);
     for (String leafColumnAtCurrentDepth : leavesAtCurrentDepth.keySet()) {
       BaseSingleColumnSingleValueReaderWriter indexReaderWriter =
           (BaseSingleColumnSingleValueReaderWriter) _indexReaderWriterMap.get(leafColumnAtCurrentDepth);
       Object value = leavesAtCurrentDepth.get(leafColumnAtCurrentDepth);
       // TODO: handle no-dict leaf column
+      int index = leafColumnToRowCount.get(leafColumnAtCurrentDepth);
       for (int i = 1; i < repetitionLevel; i++) {
         Integer dictId = (Integer)dictIdMap.get(leafColumnAtCurrentDepth);
-        indexReaderWriter.setInt(startIndex++, dictId);
+        indexReaderWriter.setInt(index++, dictId);
       }
+      leafColumnToRowCount.put(leafColumnAtCurrentDepth, index);
     }
   }
 
@@ -1124,7 +1149,7 @@ public class MutableSegmentImpl implements MutableSegment {
     throw new UnsupportedOperationException();
   }
 
-  private DataSource createNestedDataSource(FieldSpec fieldSpec, int numDocsIndexed) {
+  private DataSource createNestedDataSource(FieldSpec fieldSpec) {
 
     NestedFieldSpec nestedFieldSpec = (NestedFieldSpec)fieldSpec;
     Map<String, FieldSpec> childFieldSpecs = nestedFieldSpec.getChildFieldSpecs();
@@ -1133,9 +1158,9 @@ public class MutableSegmentImpl implements MutableSegment {
       FieldSpec childFieldSpec = childFieldSpecs.get(childCol);
       DataSource childDataSource;
       if (childFieldSpec instanceof NestedFieldSpec) {
-        childDataSource = createNestedDataSource(childFieldSpec, numDocsIndexed);
+        childDataSource = createNestedDataSource(childFieldSpec);
       } else {
-        childDataSource = createScalarDataSource(childCol, childFieldSpec, _rootDocIdToFlattenedDocs.get(numDocsIndexed));
+        childDataSource = createScalarDataSource(childCol, childFieldSpec, _numFlattenedDocsIndexed);
       }
       childDataSources.put(childCol, childDataSource);
     }

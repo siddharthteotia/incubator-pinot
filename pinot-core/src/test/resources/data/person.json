@@ -1,40 +1,94 @@
-{
-  "name": "john",
-  "age": 25,
-  "salary": 100000,
-  "addresses": [{
-    "apt": 1012,
-    "zip": 94404,
-    "phones": [{
-      "phonenumber": 123456,
-      "type": "mobile"
-    },
-      {
-        "phonenumber": 565676,
-        "type": "work"
-      },
-      {
-        "phonenumber": 212123244,
-        "type": "emergency"
-      }
-    ]
-  },
-    {
-      "apt": 1022,
-      "zip": 94402,
-      "phones": [{
-        "phonenumber": 212121,
-        "type": "mobile"
-      },
+
+    [{
+      "name": "john",
+      "age": 25,
+      "salary": 100000,
+      "addresses": [
         {
-          "phonenumber": 32322,
-          "type": "work"
+          "apt": 1012,
+          "zip": 94404,
+          "phones": [
+            {
+              "phonenumber": 123456,
+              "type": "mobile"
+            },
+            {
+              "phonenumber": 565676,
+              "type": "work"
+            },
+            {
+              "phonenumber": 212123244,
+              "type": "emergency"
+            }
+          ]
         },
         {
-          "phonenumber": 232424,
-          "type": "landline"
+          "apt": 1022,
+          "zip": 94402,
+          "phones": [
+            {
+              "phonenumber": 212121,
+              "type": "mobile"
+            },
+            {
+              "phonenumber": 32322,
+              "type": "work"
+            },
+            {
+              "phonenumber": 232424,
+              "type": "landline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sidd",
+      "age": 26,
+      "salary": 200000,
+      "addresses": [
+        {
+          "apt": 1000,
+          "zip": 95136,
+          "phones": [
+            {
+              "phonenumber": 412482,
+              "type": "mobile"
+            }
+          ]
         }
       ]
     }
-  ]
-}
+    ,
+      {
+        "name": "abc",
+        "age": 25,
+        "salary": 200000,
+        "addresses": [
+          {
+            "apt": 1073,
+            "zip": 94404,
+            "phones": [
+              {
+                "phonenumber": 4374637,
+                "type": "mobile"
+              }
+            ]
+          }
+          ,
+          {
+            "apt": 1017,
+            "zip": 94404,
+            "phones": [
+              {
+                "phonenumber": 4374637,
+                "type": "mobile"
+              },
+              {
+                "phonenumber": 132323,
+                "type": "work"
+              }
+            ]
+          }
+        ]
+      }]
