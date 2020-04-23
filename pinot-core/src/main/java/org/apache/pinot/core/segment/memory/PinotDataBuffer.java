@@ -179,6 +179,12 @@ public abstract class PinotDataBuffer implements Closeable {
     return loadFile(file, 0, file.length(), ByteOrder.BIG_ENDIAN, null);
   }
 
+  @VisibleForTesting
+  public static PinotDataBuffer loadLittleEndianFile(File file)
+      throws IOException {
+    return loadFile(file, 0, file.length(), ByteOrder.LITTLE_ENDIAN, null);
+  }
+
   /**
    * Memory maps a file into a buffer.
    * <p>NOTE: If the file gets extended, the contents of the extended portion of the file are not defined.

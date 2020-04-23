@@ -33,6 +33,7 @@ public class FixedBitSingleValueWriter implements SingleColumnSingleValueWriter 
       throws Exception {
     // Convert to long in order to avoid int overflow
     long length = ((long) rows * columnSizeInBits + Byte.SIZE - 1) / Byte.SIZE;
+    length = length + length % 32;
     // Backward-compatible: index file is always big-endian
     PinotDataBuffer dataBuffer =
         PinotDataBuffer.mapFile(file, false, 0, length, ByteOrder.BIG_ENDIAN, getClass().getSimpleName());

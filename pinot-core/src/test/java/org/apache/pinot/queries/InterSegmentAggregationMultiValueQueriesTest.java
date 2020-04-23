@@ -61,7 +61,7 @@ public class InterSegmentAggregationMultiValueQueriesTest extends BaseMultiValue
     QueriesTestUtils
         .testInterSegmentAggregationResult(brokerResponse, 400000L, 0L, 800000L, 400000L, new String[]{"199896"});
 
-    query = "SELECT COUNTMV(column6) FROM testTable GROUP BY VALUEIN(column7, 363, 469, 246, 100000)";
+    query = "SELECT SUMMV(column6) FROM testTable GROUP BY VALUEIN(column7, 363, 469, 246, 100000)";
     brokerResponse = getBrokerResponseForPqlQuery(query);
     List<String[]> groupKeys = new ArrayList<>();
     groupKeys.add(new String[]{"363"});
