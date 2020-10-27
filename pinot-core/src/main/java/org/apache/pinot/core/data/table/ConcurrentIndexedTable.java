@@ -95,17 +95,7 @@ public class ConcurrentIndexedTable extends IndexedTable {
 
       // resize if exceeds max capacity
       if (_lookupMap.size() >= _maxCapacity) {
-        if (_hasOrderBy) {
-          // reached capacity, resize
-          _readWriteLock.writeLock().lock();
-          try {
-            if (_lookupMap.size() >= _maxCapacity) {
-              resize(_capacity);
-            }
-          } finally {
-            _readWriteLock.writeLock().unlock();
-          }
-        } else {
+        if (!_hasOrderBy) {
           // reached capacity and no order by. No more new records will be accepted
           _noMoreNewRecords.set(true);
         }
