@@ -229,14 +229,14 @@ public class TableResizer {
           convertToIntermediateRecordsPQ(recordsMap, numRecordsToRetain, _intermediateRecordComparator.reversed());
       // use PQ to get sorted list
       Record[] sortedArray = new Record[numRecordsToRetain];
-      ObjectOpenHashSet<Key> keysToRetain = new ObjectOpenHashSet<>(numRecordsToRetain);
+      //ObjectOpenHashSet<Key> keysToRetain = new ObjectOpenHashSet<>(numRecordsToRetain);
       while (!priorityQueue.isEmpty()) {
         IntermediateRecord intermediateRecord = priorityQueue.poll();
-        keysToRetain.add(intermediateRecord._key);
+        //keysToRetain.add(intermediateRecord._key);
         Record record = recordsMap.get(intermediateRecord._key);
         sortedArray[--numRecordsToRetain] = record;
       }
-      recordsMap.keySet().retainAll(keysToRetain);
+      //recordsMap.keySet().retainAll(keysToRetain);
       return Arrays.asList(sortedArray);
     }
   }

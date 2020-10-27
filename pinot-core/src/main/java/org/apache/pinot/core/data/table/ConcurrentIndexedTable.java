@@ -93,12 +93,10 @@ public class ConcurrentIndexedTable extends IndexedTable {
         _readWriteLock.readLock().unlock();
       }
 
-      // resize if exceeds max capacity
-      if (_lookupMap.size() >= _maxCapacity) {
-        if (!_hasOrderBy) {
-          // reached capacity and no order by. No more new records will be accepted
-          _noMoreNewRecords.set(true);
-        }
+      // resize if exceeds capacity
+      if (_lookupMap.size() >= _trimSize && !_hasOrderBy) {
+        // reached capacity and no order by. No more new records will be accepted
+        _noMoreNewRecords.set(true);
       }
     }
     return true;
@@ -148,14 +146,14 @@ public class ConcurrentIndexedTable extends IndexedTable {
     if (_hasOrderBy) {
 
       if (sort) {
-        List<Record> sortedRecords = resizeAndSort(_capacity);
+        List<Record> sortedRecords = resizeAndSort(_trimSize);
         _iterator = sortedRecords.iterator();
-      } else {
-        resize(_capacity);
+      } else if (_lookupMap.size() >= _trimThreshold) {
+        resize(_trimSize);
       }
       int numResizes = _numResizes.get();
       long resizeTime = _resizeTime.get();
-      LOGGER.debug("Num resizes : {}, Total time spent in resizing : {}, Avg resize time : {}", numResizes, resizeTime,
+      LOGGER.info("Num resizes : {}, Total time spent in resizing : {}, Avg resize time : {}", numResizes, resizeTime,
           numResizes == 0 ? 0 : resizeTime / numResizes);
     }
 

@@ -38,11 +38,11 @@ public abstract class IndexedTable extends BaseTable {
   protected final TableResizer _tableResizer;
 
   // The capacity we need to trim to
-  protected final int _capacity;
+  protected final int _trimSize;
   // The capacity with added buffer, in order to collect more records than capacity for better precision
-  protected final int _maxCapacity;
+  protected final int _trimThreshold;
 
-  protected IndexedTable(DataSchema dataSchema, QueryContext queryContext, int capacity) {
+  protected IndexedTable(DataSchema dataSchema, QueryContext queryContext, int trimSize) {
     super(dataSchema);
 
     List<ExpressionContext> groupByExpressions = queryContext.getGroupByExpressions();
@@ -55,21 +55,22 @@ public abstract class IndexedTable extends BaseTable {
     if (orderByExpressions != null) {
       _hasOrderBy = true;
       _tableResizer = new TableResizer(dataSchema, queryContext);
-      _capacity = capacity;
+      _trimSize = trimSize;
 
       // TODO: tune these numbers and come up with a better formula (github ISSUE-4801)
       // Based on the capacity and maxCapacity, the resizer will smartly choose to evict/retain recors from the PQ
-      if (capacity
-          <= 100_000) { // Capacity is small, make a very large buffer. Make PQ of records to retain, during resize
-        _maxCapacity = 1_000_000;
-      } else { // Capacity is large, make buffer only slightly bigger. Make PQ of records to evict, during resize
-        _maxCapacity = capacity * 4;
+      if (trimSize <= 100_000) {
+        // Capacity is small, make a very large buffer. Make PQ of records to retain, during resize
+        _trimThreshold = 1_000_000;
+      } else {
+        // Capacity is large, make buffer only slightly bigger. Make PQ of records to evict, during resize
+        _trimThreshold = trimSize * 4;
       }
     } else {
       _hasOrderBy = false;
       _tableResizer = null;
-      _capacity = capacity;
-      _maxCapacity = capacity;
+      _trimSize = trimSize;
+      _trimThreshold = trimSize;
     }
   }
 
