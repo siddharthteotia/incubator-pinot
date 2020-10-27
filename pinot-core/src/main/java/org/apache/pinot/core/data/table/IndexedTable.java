@@ -63,7 +63,7 @@ public abstract class IndexedTable extends BaseTable {
           <= 100_000) { // Capacity is small, make a very large buffer. Make PQ of records to retain, during resize
         _maxCapacity = 1_000_000;
       } else { // Capacity is large, make buffer only slightly bigger. Make PQ of records to evict, during resize
-        _maxCapacity = (int) (capacity * 1.2);
+        _maxCapacity = capacity * 4;
       }
     } else {
       _hasOrderBy = false;
