@@ -83,7 +83,7 @@ public class OptimizedTableResizer {
       comparators[i] = new RecordComparator(_orderByValueExtractors[i], orderByExpression.isAsc());
     }
     _recordComparator = (r1, r2) -> {
-      for (int i = 0; i < _numGroupByExpressions; i++) {
+      for (int i = 0; i < _numOrderByExpressions; i++) {
         int result = comparators[i].compare(r1, r2);
         if (result != 0) {
           return result;

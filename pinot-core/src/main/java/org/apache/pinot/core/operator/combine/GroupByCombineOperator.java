@@ -79,8 +79,9 @@ public class GroupByCombineOperator extends BaseOperator<IntermediateResultsBloc
     _executorService = executorService;
     _timeOutMs = timeOutMs;
     _innerSegmentNumGroupsLimit = innerSegmentNumGroupsLimit;
-    _interSegmentNumGroupsLimit =
-        (int) Math.min((long) innerSegmentNumGroupsLimit * INTER_SEGMENT_NUM_GROUPS_LIMIT_FACTOR, Integer.MAX_VALUE);
+    _interSegmentNumGroupsLimit = Integer.MAX_VALUE;
+    //_interSegmentNumGroupsLimit =
+        //(int) Math.min((long) innerSegmentNumGroupsLimit * INTER_SEGMENT_NUM_GROUPS_LIMIT_FACTOR, Integer.MAX_VALUE);
   }
 
   /**
