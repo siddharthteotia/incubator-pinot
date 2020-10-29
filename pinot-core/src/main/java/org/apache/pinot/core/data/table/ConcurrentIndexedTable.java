@@ -61,7 +61,7 @@ public class ConcurrentIndexedTable extends IndexedTable {
   public boolean upsert(Key key, Record newRecord) {
 
     Preconditions.checkNotNull(key, "Cannot upsert record with null keys");
-
+    newRecord.setKey(key);
     if (_noMoreNewRecords.get()) { // allow only existing record updates
       _lookupMap.computeIfPresent(key, (k, v) -> {
         Object[] existingValues = v.getValues();
@@ -153,8 +153,8 @@ public class ConcurrentIndexedTable extends IndexedTable {
       }
       int numResizes = _numResizes.get();
       long resizeTime = _resizeTime.get();
-      LOGGER.info("Num resizes : {}, Total time spent in resizing : {}, Avg resize time : {}", numResizes, resizeTime,
-          numResizes == 0 ? 0 : resizeTime / numResizes);
+      LOGGER.info("Num resizes : {}, Total time spent in resizing : {}, Avg resize time : {}, trimSize: {}, trimThreshold: {}", numResizes, resizeTime,
+          numResizes == 0 ? 0 : resizeTime / numResizes, _trimSize, _trimThreshold);
     }
 
     if (_iterator == null) {

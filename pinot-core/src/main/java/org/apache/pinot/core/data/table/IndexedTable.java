@@ -35,7 +35,7 @@ public abstract class IndexedTable extends BaseTable {
   protected final int _numKeyColumns;
   protected final AggregationFunction[] _aggregationFunctions;
   protected final boolean _hasOrderBy;
-  protected final TableResizer _tableResizer;
+  protected final OptimizedTableResizer _tableResizer;
 
   // The capacity we need to trim to
   protected final int _trimSize;
@@ -54,7 +54,7 @@ public abstract class IndexedTable extends BaseTable {
     List<OrderByExpressionContext> orderByExpressions = queryContext.getOrderByExpressions();
     if (orderByExpressions != null) {
       _hasOrderBy = true;
-      _tableResizer = new TableResizer(dataSchema, queryContext);
+      _tableResizer = new OptimizedTableResizer(dataSchema, queryContext);
       _trimSize = trimSize;
 
       // TODO: tune these numbers and come up with a better formula (github ISSUE-4801)

@@ -45,6 +45,7 @@ import java.util.Arrays;
 public class Record {
   private final Object[] _values;
 
+  private Key _key;
   public Record(Object[] values) {
     _values = values;
   }
@@ -63,5 +64,13 @@ public class Record {
   @Override
   public int hashCode() {
     return Arrays.hashCode(_values);
+  }
+
+  public void setKey(Key key) {
+    _key = key;
+  }
+
+  public Key getKey() {
+    return _key;
   }
 }

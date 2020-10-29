@@ -57,6 +57,7 @@ public class SimpleIndexedTable extends IndexedTable {
   public boolean upsert(Key key, Record newRecord) {
     Preconditions.checkNotNull(key, "Cannot upsert record with null keys");
 
+    newRecord.setKey(key);
     if (_noMoreNewRecords) { // allow only existing record updates
       _lookupMap.computeIfPresent(key, (k, v) -> {
         Object[] existingValues = v.getValues();
@@ -83,10 +84,10 @@ public class SimpleIndexedTable extends IndexedTable {
         }
       });
 
-      if (_lookupMap.size() >= _maxCapacity) {
+      if (_lookupMap.size() >= _trimThreshold) {
         if (_hasOrderBy) {
           // reached max capacity, resize
-          resize(_capacity);
+          resize(_trimSize);
         } else {
           // reached max capacity and no order by. No more new records will be accepted
           _noMoreNewRecords = true;
@@ -140,14 +141,13 @@ public class SimpleIndexedTable extends IndexedTable {
     if (_hasOrderBy) {
 
       if (sort) {
-        List<Record> sortedRecords = resizeAndSort(_capacity);
+        List<Record> sortedRecords = resizeAndSort(_trimSize);
         _iterator = sortedRecords.iterator();
       } else {
-        resize(_capacity);
+        resize(_trimSize);
       }
-      LOGGER
-          .debug("Num resizes : {}, Total time spent in resizing : {}, Avg resize time : {}", _numResizes, _resizeTime,
-              _numResizes == 0 ? 0 : _resizeTime / _numResizes);
+      LOGGER.info("Num resizes : {}, Total time spent in resizing : {}, Avg resize time : {}, trimSize: {}, trimThreshold: {}", _numResizes, _resizeTime,
+              _numResizes == 0 ? 0 : _resizeTime / _numResizes, _trimSize, _trimThreshold);
     }
 
     if (_iterator == null) {
