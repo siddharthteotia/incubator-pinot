@@ -76,40 +76,42 @@ public class OptimizedTableResizer {
     assert orderByExpressions != null;
     _numOrderByExpressions = orderByExpressions.size();
     _orderByValueExtractors = new OrderByValueExtractor[_numOrderByExpressions];
-    RecordComparator[] comparators = new RecordComparator[_numOrderByExpressions];
+    boolean[] ordering = new boolean[_numOrderByExpressions];
     for (int i = 0; i < _numOrderByExpressions; i++) {
       OrderByExpressionContext orderByExpression = orderByExpressions.get(i);
       _orderByValueExtractors[i] = getOrderByValueExtractor(orderByExpression.getExpression());
-      comparators[i] = new RecordComparator(_orderByValueExtractors[i], orderByExpression.isAsc());
+      ordering[i] = orderByExpression.isAsc();
     }
-    _recordComparator = (r1, r2) -> {
-      for (int i = 0; i < _numOrderByExpressions; i++) {
-        int result = comparators[i].compare(r1, r2);
+    _recordComparator = new RecordComparator(_orderByValueExtractors, ordering);
+  }
+
+  private static class RecordComparator implements Comparator<Record> {
+    private final OrderByValueExtractor[] _orderByValueExtractors;
+    private final boolean[] _ordering;
+
+    RecordComparator(OrderByValueExtractor[] valueExtractors, boolean[] ordering) {
+      _orderByValueExtractors = valueExtractors;
+      _ordering = ordering;
+    }
+
+    @Override
+    public int compare (Record r1, Record r2) {
+      int length = _orderByValueExtractors.length;
+      for (int i = 0; i < length; i++) {
+        Comparable v1 = _orderByValueExtractors[i].extract(r1);
+        Comparable v2 = _orderByValueExtractors[i].extract(r2);
+        int result = 0;
+        // ordering (ASC or DESC) is on a per column basis
+        if (_ordering[i]) {
+          result = v1.compareTo(v2);
+        } else {
+          result = v2.compareTo(v1);
+        }
         if (result != 0) {
           return result;
         }
       }
       return 0;
-    };
-  }
-
-  private static class RecordComparator implements Comparator<Record> {
-    private final OrderByValueExtractor _orderByValueExtractor;
-    private final boolean _ascending;
-
-    RecordComparator(OrderByValueExtractor valueExtractor, boolean ascending) {
-      _orderByValueExtractor = valueExtractor;
-      _ascending = ascending;
-    }
-
-    @Override
-    public int compare (Record r1, Record r2) {
-      Comparable v1 = _orderByValueExtractor.extract(r1);
-      Comparable v2 = _orderByValueExtractor.extract(r2);
-      if (_ascending) {
-        return v1.compareTo(v2);
-      }
-      return v2.compareTo(v1);
     }
   }
 
@@ -144,17 +146,16 @@ public class OptimizedTableResizer {
    */
   public void resizeRecordsMap(Map<Key, Record> recordsMap, int trimToSize) {
     int numRecordsToEvict = recordsMap.size() - trimToSize;
-
     if (numRecordsToEvict > 0) {
-      // TODO: compare the performance of converting to IntermediateRecord vs keeping Record, in cases where we do not need to extract final results
-
-      if (numRecordsToEvict < trimToSize) { // num records to evict is smaller than num records to retain
+      if (numRecordsToEvict < trimToSize) {
+        // num records to evict is smaller than num records to retain
         // make PQ of records to evict
         PriorityQueue<Record> priorityQueue = convertToRecordsPQ(recordsMap, numRecordsToEvict, _recordComparator);
         for (Record evictRecord : priorityQueue) {
           recordsMap.remove(evictRecord.getKey());
         }
-      } else { // num records to retain is smaller than num records to evict
+      } else {
+        // num records to retain is smaller than num records to evict
         // make PQ of records to retain
         Comparator<Record> comparator = _recordComparator.reversed();
         PriorityQueue<Record> priorityQueue = convertToRecordsPQ(recordsMap, trimToSize, comparator);

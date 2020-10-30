@@ -58,12 +58,9 @@ public abstract class IndexedTable extends BaseTable {
       _trimSize = trimSize;
 
       // TODO: tune these numbers and come up with a better formula (github ISSUE-4801)
-      // Based on the capacity and maxCapacity, the resizer will smartly choose to evict/retain recors from the PQ
       if (trimSize <= 100_000) {
-        // Capacity is small, make a very large buffer. Make PQ of records to retain, during resize
         _trimThreshold = 1_000_000;
       } else {
-        // Capacity is large, make buffer only slightly bigger. Make PQ of records to evict, during resize
         _trimThreshold = trimSize * 4;
       }
     } else {

@@ -232,7 +232,7 @@ public class GroupByDataTableReducer implements DataTableReducer {
   }
 
   private IndexedTable getIndexedTable(DataSchema dataSchema, Collection<DataTable> dataTables) {
-    int capacity = GroupByUtils.getTableCapacity(_queryContext);
+    int capacity = _queryContext.getLimit();
     IndexedTable indexedTable = new SimpleIndexedTable(dataSchema, _queryContext, capacity);
     ColumnDataType[] columnDataTypes = dataSchema.getColumnDataTypes();
     for (DataTable dataTable : dataTables) {

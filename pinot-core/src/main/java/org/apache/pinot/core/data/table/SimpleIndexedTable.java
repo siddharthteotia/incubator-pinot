@@ -84,14 +84,9 @@ public class SimpleIndexedTable extends IndexedTable {
         }
       });
 
-      if (_lookupMap.size() >= _trimThreshold) {
-        if (_hasOrderBy) {
-          // reached max capacity, resize
-          resize(_trimSize);
-        } else {
-          // reached max capacity and no order by. No more new records will be accepted
-          _noMoreNewRecords = true;
-        }
+      if (_lookupMap.size() >= _trimSize && !_hasOrderBy) {
+        // reached max capacity and no order by. No more new records will be accepted
+        _noMoreNewRecords = true;
       }
     }
     return true;
