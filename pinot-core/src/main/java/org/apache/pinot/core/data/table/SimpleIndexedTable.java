@@ -84,39 +84,35 @@ public class SimpleIndexedTable extends IndexedTable {
         }
       });
 
-      if (_lookupMap.size() >= _trimSize && !_hasOrderBy) {
-        // reached max capacity and no order by. No more new records will be accepted
-        _noMoreNewRecords = true;
+      if (_lookupMap.size() >= _trimThresholdForUpsert) {
+        if (_hasOrderBy) {
+          // reached max capacity, resize
+          resize(_trimSize);
+        } else {
+          // reached max capacity and no order by. No more new records will be accepted
+          _noMoreNewRecords = true;
+        }
       }
     }
     return true;
   }
 
   private void resize(int trimToSize) {
-
     long startTime = System.currentTimeMillis();
-
     _tableResizer.resizeRecordsMap(_lookupMap, trimToSize);
-
     long endTime = System.currentTimeMillis();
     long timeElapsed = endTime - startTime;
-
     _numResizes++;
     _resizeTime += timeElapsed;
   }
 
   private List<Record> resizeAndSort(int trimToSize) {
-
     long startTime = System.currentTimeMillis();
-
     List<Record> sortedRecords = _tableResizer.resizeAndSortRecordsMap(_lookupMap, trimToSize);
-
     long endTime = System.currentTimeMillis();
     long timeElapsed = endTime - startTime;
-
     _numResizes++;
     _resizeTime += timeElapsed;
-
     return sortedRecords;
   }
 
@@ -132,19 +128,16 @@ public class SimpleIndexedTable extends IndexedTable {
 
   @Override
   public void finish(boolean sort) {
-
     if (_hasOrderBy) {
-
       if (sort) {
         List<Record> sortedRecords = resizeAndSort(_trimSize);
         _iterator = sortedRecords.iterator();
       } else {
         resize(_trimSize);
       }
-      LOGGER.info("Num resizes : {}, Total time spent in resizing : {}, Avg resize time : {}, trimSize: {}, trimThreshold: {}", _numResizes, _resizeTime,
-              _numResizes == 0 ? 0 : _resizeTime / _numResizes, _trimSize, _trimThreshold);
+      LOGGER.info("Num resizes : {}, Total time spent in resizing : {}, Avg resize time : {}, trimSize: {}, trimThresholdForUpsert: {},  trimThresholdForFinish: {}",
+          _numResizes, _resizeTime, _numResizes == 0 ? 0 : _resizeTime / _numResizes, _trimSize, _trimThresholdForUpsert, _trimThresholdForFinish);
     }
-
     if (_iterator == null) {
       _iterator = _lookupMap.values().iterator();
     }

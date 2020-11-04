@@ -93,10 +93,22 @@ public class ConcurrentIndexedTable extends IndexedTable {
         _readWriteLock.readLock().unlock();
       }
 
-      // resize if exceeds capacity
-      if (_lookupMap.size() >= _trimSize && !_hasOrderBy) {
-        // reached capacity and no order by. No more new records will be accepted
-        _noMoreNewRecords.set(true);
+      // resize if exceeds trim threshold
+      if (_lookupMap.size() >= _trimThresholdForUpsert) {
+        if (_hasOrderBy) {
+          // reached capacity, resize
+          _readWriteLock.writeLock().lock();
+          try {
+            if (_lookupMap.size() >= _trimThresholdForUpsert) {
+              resize(_trimSize);
+            }
+          } finally {
+            _readWriteLock.writeLock().unlock();
+          }
+        } else {
+          // reached capacity and no order by. No more new records will be accepted
+          _noMoreNewRecords.set(true);
+        }
       }
     }
     return true;
@@ -113,50 +125,38 @@ public class ConcurrentIndexedTable extends IndexedTable {
   }
 
   private void resize(int trimToSize) {
-
     long startTime = System.currentTimeMillis();
-
     _tableResizer.resizeRecordsMap(_lookupMap, trimToSize);
-
     long endTime = System.currentTimeMillis();
     long timeElapsed = endTime - startTime;
-
     _numResizes.incrementAndGet();
     _resizeTime.addAndGet(timeElapsed);
   }
 
   private List<Record> resizeAndSort(int trimToSize) {
-
     long startTime = System.currentTimeMillis();
-
     List<Record> sortedRecords = _tableResizer.resizeAndSortRecordsMap(_lookupMap, trimToSize);
-
     long endTime = System.currentTimeMillis();
     long timeElapsed = endTime - startTime;
-
     _numResizes.incrementAndGet();
     _resizeTime.addAndGet(timeElapsed);
-
     return sortedRecords;
   }
 
   @Override
   public void finish(boolean sort) {
-
     if (_hasOrderBy) {
-
       if (sort) {
         List<Record> sortedRecords = resizeAndSort(_trimSize);
         _iterator = sortedRecords.iterator();
-      } else if (_lookupMap.size() >= _trimThreshold) {
+      } else if (_lookupMap.size() >= _trimThresholdForFinish) {
         resize(_trimSize);
       }
       int numResizes = _numResizes.get();
       long resizeTime = _resizeTime.get();
-      LOGGER.info("Num resizes : {}, Total time spent in resizing : {}, Avg resize time : {}, trimSize: {}, trimThreshold: {}", numResizes, resizeTime,
-          numResizes == 0 ? 0 : resizeTime / numResizes, _trimSize, _trimThreshold);
+      LOGGER.info("Num resizes : {}, Total time spent in resizing : {}, Avg resize time : {}, trimSize: {}, trimThresholdForUpsert: {}, trimThresholdForFinish: {}",
+          numResizes, resizeTime, numResizes == 0 ? 0 : resizeTime / numResizes, _trimSize, _trimThresholdForUpsert, _trimThresholdForFinish);
     }
-
     if (_iterator == null) {
       _iterator = _lookupMap.values().iterator();
     }

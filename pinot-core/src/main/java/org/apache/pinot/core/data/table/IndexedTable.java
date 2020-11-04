@@ -35,12 +35,15 @@ public abstract class IndexedTable extends BaseTable {
   protected final int _numKeyColumns;
   protected final AggregationFunction[] _aggregationFunctions;
   protected final boolean _hasOrderBy;
-  protected final OptimizedTableResizer _tableResizer;
+  protected final TableResizer _tableResizer;
 
   // The capacity we need to trim to
   protected final int _trimSize;
   // The capacity with added buffer, in order to collect more records than capacity for better precision
-  protected final int _trimThreshold;
+  protected final int _trimThresholdForUpsert;
+  protected final int _trimThresholdForFinish;
+
+  private static final int DEFAULT_TRIM_THRESHOLD = 1_000_000_000;
 
   protected IndexedTable(DataSchema dataSchema, QueryContext queryContext, int trimSize) {
     super(dataSchema);
@@ -54,20 +57,16 @@ public abstract class IndexedTable extends BaseTable {
     List<OrderByExpressionContext> orderByExpressions = queryContext.getOrderByExpressions();
     if (orderByExpressions != null) {
       _hasOrderBy = true;
-      _tableResizer = new OptimizedTableResizer(dataSchema, queryContext);
+      _tableResizer = new TableResizer(dataSchema, queryContext);
       _trimSize = trimSize;
-
-      // TODO: tune these numbers and come up with a better formula (github ISSUE-4801)
-      if (trimSize <= 100_000) {
-        _trimThreshold = 1_000_000;
-      } else {
-        _trimThreshold = trimSize * 4;
-      }
+      _trimThresholdForUpsert = Math.max(trimSize * 4, DEFAULT_TRIM_THRESHOLD);
+      _trimThresholdForFinish = trimSize * 4;
     } else {
       _hasOrderBy = false;
       _tableResizer = null;
       _trimSize = trimSize;
-      _trimThreshold = trimSize;
+      _trimThresholdForUpsert = trimSize;
+      _trimThresholdForFinish = trimSize;
     }
   }
 
