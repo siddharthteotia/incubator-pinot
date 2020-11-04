@@ -88,7 +88,7 @@ public class OptimizedTableResizer {
   private static class RecordComparator implements Comparator<Record> {
     private final OrderByValueExtractor[] _orderByValueExtractors;
     private final boolean[] _ordering;
-    private boolean _reversed;
+    public boolean _reversed = false;
 
     RecordComparator(OrderByValueExtractor[] valueExtractors, boolean[] ordering) {
       _orderByValueExtractors = valueExtractors;
@@ -103,13 +103,24 @@ public class OptimizedTableResizer {
         Comparable v2 = _orderByValueExtractors[i].extract(r2);
         int result = 0;
         // ordering (ASC or DESC) is on a per column basis
-        if (_ordering[i]) {
-          result = v1.compareTo(v2);
+        if (!_reversed) {
+          if (_ordering[i]) {
+            result = v1.compareTo(v2);
+          } else {
+            result = v2.compareTo(v1);
+          }
+          if (result != 0) {
+            return result;
+          }
         } else {
-          result = v2.compareTo(v1);
-        }
-        if (result != 0) {
-          return result;
+          if (_ordering[i]) {
+            result = v2.compareTo(v1);
+          } else {
+            result = v1.compareTo(v2);
+          }
+          if (result != 0) {
+            return result;
+          }
         }
       }
       return 0;
@@ -158,7 +169,8 @@ public class OptimizedTableResizer {
       } else {
         // num records to retain is smaller than num records to evict
         // make PQ of records to retain
-        Comparator<Record> comparator = _recordComparator.reversed();
+        RecordComparator comparator = (RecordComparator)_recordComparator;
+        comparator._reversed = true;
         PriorityQueue<Record> priorityQueue = convertToRecordsPQ(recordsMap, trimToSize, comparator);
         ObjectOpenHashSet<Key> keysToRetain = new ObjectOpenHashSet<>(priorityQueue.size());
         for (Record retainRecord : priorityQueue) {
@@ -199,7 +211,9 @@ public class OptimizedTableResizer {
       return Collections.emptyList();
     }
     int numRecordsToRetain = Math.min(numRecords, trimToSize);
-    PriorityQueue<Record> priorityQueue = convertToRecordsPQ(recordsMap, numRecordsToRetain, _recordComparator.reversed());
+    RecordComparator comparator = (RecordComparator)_recordComparator;
+    comparator._reversed = true;
+    PriorityQueue<Record> priorityQueue = convertToRecordsPQ(recordsMap, numRecordsToRetain, comparator);
     Record[] sortedArray = new Record[numRecordsToRetain];
     while (!priorityQueue.isEmpty()) {
       Record record = priorityQueue.poll();
