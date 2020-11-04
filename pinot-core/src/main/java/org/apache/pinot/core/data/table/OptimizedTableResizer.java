@@ -88,6 +88,7 @@ public class OptimizedTableResizer {
   private static class RecordComparator implements Comparator<Record> {
     private final OrderByValueExtractor[] _orderByValueExtractors;
     private final boolean[] _ordering;
+    private boolean _reversed;
 
     RecordComparator(OrderByValueExtractor[] valueExtractors, boolean[] ordering) {
       _orderByValueExtractors = valueExtractors;
@@ -198,12 +199,11 @@ public class OptimizedTableResizer {
       return Collections.emptyList();
     }
     int numRecordsToRetain = Math.min(numRecords, trimToSize);
-    PriorityQueue<Record> priorityQueue = convertToRecordsPQ(recordsMap, numRecordsToRetain, _recordComparator);
+    PriorityQueue<Record> priorityQueue = convertToRecordsPQ(recordsMap, numRecordsToRetain, _recordComparator.reversed());
     Record[] sortedArray = new Record[numRecordsToRetain];
-    int count = 0;
     while (!priorityQueue.isEmpty()) {
       Record record = priorityQueue.poll();
-      sortedArray[count++] = record;
+      sortedArray[--numRecordsToRetain] = record;
     }
     return Arrays.asList(sortedArray);
   }
