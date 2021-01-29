@@ -107,9 +107,11 @@ public class RealtimeLuceneIndexReaderRefreshThread implements Runnable {
       RealtimeLuceneReaders realtimeReadersForSegment = _luceneRealtimeReaders.poll();
       if (realtimeReadersForSegment != null) {
         String segmentName = realtimeReadersForSegment.getSegmentName();
+        LOGGER.info("Will refresh consuming segment: {}", segmentName);
         // take the lock to prevent the realtime segment from being concurrently destroyed
         // and thus closing the realtime readers while this thread attempts to refresh them
         realtimeReadersForSegment.getLock().lock();
+        LOGGER.info("acquired the lock");
         try {
           if (!realtimeReadersForSegment.isSegmentDestroyed()) {
             // if the segment hasn't yet been destroyed, refresh each
@@ -117,14 +119,20 @@ public class RealtimeLuceneIndexReaderRefreshThread implements Runnable {
             // for this segment.
             List<RealtimeLuceneTextIndexReader> realtimeLuceneReaders =
                 realtimeReadersForSegment.getRealtimeLuceneReaders();
+            LOGGER.info("consuming segment {} not yet destroyed. Has {} realtime text index readers",
+                segmentName, realtimeLuceneReaders.size());
             for (RealtimeLuceneTextIndexReader realtimeReader : realtimeLuceneReaders) {
               if (_stopped) {
+                LOGGER.info("server shutdown.... exiting");
                 // exit
                 break;
               }
               SearcherManager searcherManager = realtimeReader.getSearcherManager();
+              LOGGER.info("Got the searcher manager for realtime text index for column  {} in segment {}", realtimeReader.getColumn(), segmentName);
               try {
+                LOGGER.info("Will refresh the RT text index snapshot now for segment {}", segmentName);
                 searcherManager.maybeRefresh();
+                LOGGER.info("RT text index snapshot refreshed for column {} in  segment {}", realtimeReader.getColumn(), segmentName);
               } catch (Exception e) {
                 // we should never be here since the locking semantics between MutableSegmentImpl::destroy()
                 // and this code along with volatile state "isSegmentDestroyed" protect against the cases
@@ -136,6 +144,8 @@ public class RealtimeLuceneIndexReaderRefreshThread implements Runnable {
             }
           }
         } finally {
+          LOGGER.info("adding back the text index readers for consuming segment {} to refresh queue", segmentName);
+          _luceneRealtimeReaders.add(realtimeReadersForSegment);
           realtimeReadersForSegment.getLock().unlock();
         }
       }

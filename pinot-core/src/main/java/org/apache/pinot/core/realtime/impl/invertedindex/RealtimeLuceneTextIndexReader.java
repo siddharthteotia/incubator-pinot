@@ -154,6 +154,10 @@ public class RealtimeLuceneTextIndexReader implements TextIndexReader {
     }
   }
 
+  public String getColumn() {
+    return _column;
+  }
+
   SearcherManager getSearcherManager() {
     return _searcherManager;
   }
