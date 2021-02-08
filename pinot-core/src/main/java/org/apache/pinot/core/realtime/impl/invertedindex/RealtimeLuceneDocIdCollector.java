@@ -57,7 +57,7 @@ public class RealtimeLuceneDocIdCollector implements Collector {
 
       @Override
       public void collect(int doc) throws IOException {
-        _docIds.add(doc);
+        _docIds.add(context.docBase + doc);
       }
     };
   }
