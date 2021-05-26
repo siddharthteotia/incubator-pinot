@@ -2328,4 +2328,59 @@ public class CalciteSqlCompilerTest {
     PinotQuery pinotQuery = CalciteSqlParser.compileToPinotQuery(query);
     Assert.assertNotNull(pinotQuery);
   }
+
+  @Test
+  public void testExplain() {
+    String sql;
+    String withoutExplainSql;
+    PinotQuery pinotQuery;
+
+    withoutExplainSql = "SELECT * FROM FOO";
+    sql = "EXPLAIN PLAN FOR " + withoutExplainSql;
+    // PinotQuery returned by the parser should be the same as if without EXPLAIN PLAN
+    samePinotQuery(sql, withoutExplainSql);
+    pinotQuery = CalciteSqlParser.compileToPinotQuery(sql);
+    // Test additional field <"execute", "false"> in query options
+    Assert.assertEquals(pinotQuery.getQueryOptionsSize(), 1);
+    Assert.assertTrue(pinotQuery.getQueryOptions().containsKey("explainPlan"));
+    Assert.assertEquals(pinotQuery.getQueryOptions().get("explainPlan"), "true");
+
+    withoutExplainSql = "SELECT * FROM FOO OPTION (foo=1234)";
+    sql = "EXPLAIN PLAN FOR " + withoutExplainSql;
+    samePinotQuery(sql, withoutExplainSql);
+    pinotQuery = CalciteSqlParser.compileToPinotQuery(sql);
+    Assert.assertEquals(pinotQuery.getQueryOptionsSize(), 2);
+    Assert.assertTrue(pinotQuery.getQueryOptions().containsKey("explainPlan"));
+    Assert.assertTrue(pinotQuery.getQueryOptions().containsKey("foo"));
+    Assert.assertEquals(pinotQuery.getQueryOptions().get("explainPlan"), "true");
+    Assert.assertEquals(pinotQuery.getQueryOptions().get("foo"), "1234");
+
+    withoutExplainSql = "SELECT col1, col2 FROM FOO WHERE a = 1.5 AND b = 1 ORDER BY col1 DESC LIMIT 200";
+    sql = "EXPLAIN PLAN FOR " + withoutExplainSql;
+    samePinotQuery(sql, withoutExplainSql);
+    pinotQuery = CalciteSqlParser.compileToPinotQuery(sql);
+    Assert.assertEquals(pinotQuery.getQueryOptionsSize(), 1);
+    Assert.assertTrue(pinotQuery.getQueryOptions().containsKey("explainPlan"));
+    Assert.assertEquals(pinotQuery.getQueryOptions().get("explainPlan"), "true");
+
+    withoutExplainSql = "SELECT col1, DATETIMECONVERT(col2), sum(col3) as col3_sum, count(*), distinctCount(col4) "
+        + "FROM FOO WHERE col5 in (1, 2, 3) "
+        + "GROUP BY col1, DATETIMECONVERT(col2) "
+        + "HAVING sum(col3) > 100 "
+        + "ORDER BY col1 DESC LIMIT 100";
+    sql = "EXPLAIN PLAN FOR " + withoutExplainSql;
+    samePinotQuery(sql, withoutExplainSql);
+    pinotQuery = CalciteSqlParser.compileToPinotQuery(sql);
+    Assert.assertEquals(pinotQuery.getQueryOptionsSize(), 1);
+    Assert.assertTrue(pinotQuery.getQueryOptions().containsKey("explainPlan"));
+    Assert.assertEquals(pinotQuery.getQueryOptions().get("explainPlan"), "true");
+  }
+
+  private void samePinotQuery(String withExplain, String withoutExplain) {
+    // PinotQuery returned by the parser should be the same as if without EXPLAIN PLAN
+    PinotQuery explainPinotQuery = CalciteSqlParser.compileToPinotQuery(withExplain);
+    PinotQuery pinotQuery = CalciteSqlParser.compileToPinotQuery(withoutExplain);
+    pinotQuery.putToQueryOptions("explainPlan", "true");
+    Assert.assertTrue(explainPinotQuery.equals(pinotQuery));
+  }
 }

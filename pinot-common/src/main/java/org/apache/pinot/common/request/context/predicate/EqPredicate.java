@@ -19,7 +19,9 @@
 package org.apache.pinot.common.request.context.predicate;
 
 import java.util.Objects;
+import org.apache.commons.lang.StringUtils;
 import org.apache.pinot.common.request.context.ExpressionContext;
+import org.apache.pinot.common.utils.StringUtil;
 
 
 /**
@@ -67,6 +69,11 @@ public class EqPredicate implements Predicate {
 
   @Override
   public String toString() {
-    return _lhs + " = '" + _value + '\'';
+    try {
+      Double.parseDouble(_value);
+    } catch (NumberFormatException e) {
+      return _lhs + " = '" + _value + '\'';
+    }
+    return _lhs + " = " + _value;
   }
 }

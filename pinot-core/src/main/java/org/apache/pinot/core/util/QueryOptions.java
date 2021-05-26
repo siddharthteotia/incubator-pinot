@@ -29,7 +29,7 @@ import org.apache.pinot.spi.utils.CommonConstants.Broker.Request;
  */
 public class QueryOptions {
   private final Long _timeoutMs;
-  private final boolean _groupByModeSQL;
+  private final boolean  _groupByModeSQL;
   private final boolean _responseFormatSQL;
   private final boolean _preserveType;
   private final boolean _skipUpsert;

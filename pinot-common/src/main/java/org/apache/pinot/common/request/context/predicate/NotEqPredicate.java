@@ -67,6 +67,11 @@ public class NotEqPredicate implements Predicate {
 
   @Override
   public String toString() {
-    return _lhs + " != '" + _value + '\'';
+    try {
+      Double.parseDouble(_value);
+    } catch (NumberFormatException e) {
+      return _lhs + " != '" + _value + '\'';
+    }
+    return _lhs + " != " + _value;
   }
 }

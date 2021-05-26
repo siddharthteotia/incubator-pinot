@@ -360,6 +360,8 @@ public class BrokerRequestToQueryContextConverterTest {
       assertFalse(QueryContextUtils.isSelectionQuery(queryContext));
       assertTrue(QueryContextUtils.isAggregationQuery(queryContext));
       assertFalse(QueryContextUtils.isDistinctQuery(queryContext));
+
+
     }
 
     // Having (only supported in SQL format)

@@ -127,15 +127,24 @@ public class RangePredicate implements Predicate {
   @Override
   public String toString() {
     if (_lowerBound.equals(UNBOUNDED)) {
-      return _lhs + (_upperInclusive ? " <= '" : " < '") + _upperBound + '\'';
+      return _lhs + (_upperInclusive ? " <= " : " < ") + tryTrimQuotes(_upperBound);
     }
     if (_upperBound.equals(UNBOUNDED)) {
-      return _lhs + (_lowerInclusive ? " >= '" : " > '") + _lowerBound + '\'';
+      return _lhs + (_lowerInclusive ? " >= " : " > ") + tryTrimQuotes(_lowerBound);
     }
     if (_lowerInclusive && _upperInclusive) {
-      return _lhs + " BETWEEN '" + _lowerBound + "' AND '" + _upperBound + '\'';
+      return _lhs + " BETWEEN " + tryTrimQuotes(_lowerBound) + " AND " + tryTrimQuotes(_upperBound);
     }
-    return "(" + _lhs + (_lowerInclusive ? " >= '" : " > '") + _lowerBound + "' AND " + _lhs + (_upperInclusive
-        ? " <= '" : " < '") + _upperBound + "')";
+    return "(" + _lhs + (_lowerInclusive ? " >= " : " > ") + tryTrimQuotes(_lowerBound) + " AND " + _lhs + (_upperInclusive
+        ? " <= " : " < ") + tryTrimQuotes(_upperBound) + ")";
+  }
+
+  private String tryTrimQuotes(String str) {
+    try {
+      Double.parseDouble(str);
+    } catch (NumberFormatException e) {
+      return '\'' + str + '\'';
+    }
+    return str;
   }
 }

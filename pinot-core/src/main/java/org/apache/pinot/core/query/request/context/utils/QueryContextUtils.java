@@ -18,6 +18,13 @@
  */
 package org.apache.pinot.core.query.request.context.utils;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import org.apache.pinot.common.request.context.ExpressionContext;
+import org.apache.pinot.common.request.context.FilterContext;
+import org.apache.pinot.common.request.context.FunctionContext;
+import org.apache.pinot.common.request.context.OrderByExpressionContext;
 import org.apache.pinot.core.query.aggregation.function.AggregationFunction;
 import org.apache.pinot.core.query.aggregation.function.DistinctAggregationFunction;
 import org.apache.pinot.core.query.request.context.QueryContext;
@@ -52,4 +59,72 @@ public class QueryContextUtils {
     return aggregationFunctions != null && aggregationFunctions.length == 1
         && aggregationFunctions[0] instanceof DistinctAggregationFunction;
   }
+
+  /**
+   * Returns a set of transformation functions (except for the ones in filter)
+   */
+  public static Set<String> generateTransforms(QueryContext queryContext) {
+    Set<String> transforms = new HashSet<>();
+
+    // select
+    for (ExpressionContext selectExpression : queryContext.getSelectExpressions()) {
+      collectTransforms(selectExpression, transforms);
+    }
+
+    // having
+    if (queryContext.getHavingFilter() != null) {
+      collectTransforms(queryContext.getHavingFilter(), transforms);
+    }
+
+    // order-by
+    if (queryContext.getOrderByExpressions() != null) {
+      for (OrderByExpressionContext orderByExpression : queryContext.getOrderByExpressions()) {
+        collectTransforms(orderByExpression.getExpression(), transforms);
+      }
+    }
+
+    // group-by
+    if (queryContext.getGroupByExpressions() != null) {
+      for (ExpressionContext groupByExpression : queryContext.getGroupByExpressions()) {
+        collectTransforms(groupByExpression, transforms);
+      }
+    }
+
+    return transforms;
+  }
+
+  /**
+   * Collect transform functions from an ExpressionContext
+   */
+  public static void collectTransforms(ExpressionContext expression, Set<String> transforms) {
+    FunctionContext function = expression.getFunction();
+    if (function == null) {
+      // literal / identifier
+      return;
+    }
+    if (function.getType() == FunctionContext.Type.TRANSFORM) {
+      // transform
+      transforms.add(function.toString());
+    } else {
+      // aggregation
+      for (ExpressionContext argument : function.getArguments()) {
+        collectTransforms(argument, transforms);
+      }
+    }
+  }
+
+  /**
+   * Collect transform functions from a FilterContext
+   */
+  public static void collectTransforms(FilterContext filter, Set<String> transforms) {
+    List<FilterContext> children = filter.getChildren();
+    if (children != null) {
+      for (FilterContext child : children) {
+        collectTransforms(child, transforms);
+      }
+    } else {
+      collectTransforms(filter.getPredicate().getLhs(), transforms);
+    }
+  }
+
 }

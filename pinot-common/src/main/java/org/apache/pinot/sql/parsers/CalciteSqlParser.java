@@ -33,6 +33,7 @@ import javax.annotation.Nullable;
 import org.apache.calcite.config.Lex;
 import org.apache.calcite.sql.SqlBasicCall;
 import org.apache.calcite.sql.SqlDataTypeSpec;
+import org.apache.calcite.sql.SqlExplain;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlLiteral;
@@ -96,7 +97,7 @@ public class CalciteSqlParser {
   //   `OPTION (<k1> = <v1>) OPTION (<k2> = <v2>) OPTION (<k3> = <v3>)`
   private static final Pattern OPTIONS_REGEX_PATTEN =
       Pattern.compile("option\\s*\\(([^\\)]+)\\)", Pattern.CASE_INSENSITIVE);
-
+  // test pr
   public static PinotQuery compileToPinotQuery(String sql)
       throws SqlCompilationException {
     // Extract OPTION statements from sql as Calcite Parser doesn't parse it.
@@ -302,7 +303,7 @@ public class CalciteSqlParser {
     if (optionsStatements.isEmpty()) {
       return;
     }
-    Map<String, String> options = new HashMap<>();
+    Map<String, String> options = pinotQuery.isSetQueryOptions() ? pinotQuery.getQueryOptions() : new HashMap<>();
     for (String optionsStatement : optionsStatements) {
       for (String option : optionsStatement.split(",")) {
         final String[] splits = option.split("=");
@@ -324,6 +325,13 @@ public class CalciteSqlParser {
       throw new SqlCompilationException("Caught exception while parsing query: " + sql, e);
     }
 
+    PinotQuery pinotQuery = new PinotQuery();
+    if (sqlNode instanceof SqlExplain) {
+      // Extract sql node for the query
+      SqlExplain explainNode = (SqlExplain) sqlNode;
+      sqlNode = explainNode.getExplicandum();
+      pinotQuery.putToQueryOptions("explainPlan", "true");
+    }
     SqlSelect selectNode;
     if (sqlNode instanceof SqlOrderBy) {
       // Store order-by info into the select sql node
@@ -336,7 +344,6 @@ public class CalciteSqlParser {
       selectNode = (SqlSelect) sqlNode;
     }
 
-    PinotQuery pinotQuery = new PinotQuery();
     // SELECT
     if (selectNode.getModifierNode(SqlSelectKeyword.DISTINCT) != null) {
       // SELECT DISTINCT

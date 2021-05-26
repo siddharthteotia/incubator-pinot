@@ -69,10 +69,22 @@ public class InPredicate implements Predicate {
   @Override
   public String toString() {
     StringBuilder stringBuilder =
-        new StringBuilder(_lhs.toString()).append(" IN ('").append(_values.get(0)).append('\'');
+        new StringBuilder(_lhs.toString()).append(" IN (");
+    try {
+      Double.parseDouble(_values.get(0));
+    } catch (NumberFormatException e) {
+      // non-numeric
+      stringBuilder.append('\'').append(_values.get(0)).append('\'');
+      int numValues = _values.size();
+      for (int i = 1; i < numValues; i++) {
+        stringBuilder.append(",'").append(_values.get(i)).append('\'');
+      }
+      return stringBuilder.append(')').toString();
+    }
+    stringBuilder.append(_values.get(0));
     int numValues = _values.size();
     for (int i = 1; i < numValues; i++) {
-      stringBuilder.append(",'").append(_values.get(i)).append('\'');
+      stringBuilder.append(",").append(_values.get(i));
     }
     return stringBuilder.append(')').toString();
   }

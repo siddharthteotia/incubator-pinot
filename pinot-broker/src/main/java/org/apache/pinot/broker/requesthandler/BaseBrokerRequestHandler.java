@@ -74,9 +74,14 @@ import org.apache.pinot.common.response.broker.ResultTable;
 import org.apache.pinot.common.utils.DataSchema;
 import org.apache.pinot.common.utils.helix.TableCache;
 import org.apache.pinot.common.utils.request.RequestUtils;
+import org.apache.pinot.core.plan.PlanNode;
 import org.apache.pinot.core.query.aggregation.function.AggregationFunctionUtils;
+import org.apache.pinot.core.query.explain.PlanTreeNode;
+import org.apache.pinot.core.query.explain.SelectNode;
 import org.apache.pinot.core.query.optimizer.QueryOptimizer;
 import org.apache.pinot.core.query.reduce.BrokerReduceService;
+import org.apache.pinot.core.query.request.context.QueryContext;
+import org.apache.pinot.core.query.request.context.utils.BrokerRequestToQueryContextConverter;
 import org.apache.pinot.core.requesthandler.PinotQueryParserFactory;
 import org.apache.pinot.core.transport.ServerInstance;
 import org.apache.pinot.core.util.QueryOptions;
@@ -222,6 +227,7 @@ public abstract class BaseBrokerRequestHandler implements BrokerRequestHandler {
     if (isLiteralOnlyQuery(pinotQuery)) {
       LOGGER.debug("Request {} contains only Literal, skipping server query: {}", requestId, query);
       try {
+        // TODO: corner case
         return processLiteralOnlyQuery(pinotQuery, compilationStartTimeNs, requestStatistics);
       } catch (Exception e) {
         // TODO: refine the exceptions here to early termination the queries won't requires to send to servers.
@@ -232,6 +238,7 @@ public abstract class BaseBrokerRequestHandler implements BrokerRequestHandler {
     }
 
     try {
+      // TODO: corner case
       handleSubquery(pinotQuery, requestId, request, requesterIdentity, requestStatistics);
     } catch (Exception e) {
       LOGGER
@@ -342,6 +349,7 @@ public abstract class BaseBrokerRequestHandler implements BrokerRequestHandler {
     BrokerRequest offlineBrokerRequest = null;
     BrokerRequest realtimeBrokerRequest = null;
     Schema schema = _tableCache.getSchema(rawTableName);
+    // TODO: corner case - filter optimizer?
     if (offlineTableName != null && realtimeTableName != null) {
       // Hybrid
       offlineBrokerRequest = getOfflineBrokerRequest(brokerRequest);
@@ -384,6 +392,7 @@ public abstract class BaseBrokerRequestHandler implements BrokerRequestHandler {
 
     if (offlineBrokerRequest == null && realtimeBrokerRequest == null) {
       // Send empty response since we don't need to evaluate either offline or realtime request.
+      // TODO: corner case - no evaluation needed
       BrokerResponseNative brokerResponse = BrokerResponseNative.empty();
       logBrokerResponse(requestId, query, requestStatistics, brokerRequest, 0, new ServerStats(), brokerResponse,
           System.nanoTime());
@@ -471,6 +480,35 @@ public abstract class BaseBrokerRequestHandler implements BrokerRequestHandler {
       LOGGER.info("{} {}: {}", errorMessage, requestId, query);
       _brokerMetrics.addMeteredTableValue(rawTableName, BrokerMeter.REQUEST_TIMEOUT_BEFORE_SCATTERED_EXCEPTIONS, 1);
       return new BrokerResponseNative(QueryException.getException(QueryException.BROKER_TIMEOUT_ERROR, errorMessage));
+    }
+
+    // brokerRequest fully cooked up for execution
+    if (brokerRequest.getPinotQuery().isExplainPlanQuery()) {
+      // only explain TODO: add profiling
+
+      // convert original brokerRequest to QueryContext
+      QueryContext queryContext = BrokerRequestToQueryContextConverter.convert(brokerRequest);
+      TableConfig tableConfig;
+      if (offlineBrokerRequest != null && realtimeBrokerRequest != null) {
+        // TODO: distinguish between offline vs realtime segments for table config
+        // for now, if hybrid, use realtime table config
+        tableConfig = _tableCache.
+            getTableConfig(TableNameBuilder.REALTIME.tableNameWithType(realtimeTableName));
+      } else if (offlineBrokerRequest != null) {
+        // only offline segments
+        tableConfig = _tableCache.
+            getTableConfig(TableNameBuilder.OFFLINE.tableNameWithType(offlineTableName));
+      } else {
+        // only consuming segments
+        tableConfig = _tableCache.
+            getTableConfig(TableNameBuilder.REALTIME.tableNameWithType(realtimeTableName));
+      }
+
+      // create the plan tree
+      SelectNode selectRoot = new SelectNode(queryContext, tableConfig);
+      // walking down the tree to populate the result table
+      // TODO: add stats to metadata
+      return processExplainPlanQuery(selectRoot);
     }
 
     // Execute the query
@@ -1816,6 +1854,46 @@ public abstract class BaseBrokerRequestHandler implements BrokerRequestHandler {
 
     public void setServerStats(String serverStats) {
       _serverStats = serverStats;
+    }
+  }
+
+  /**
+   * Processes the literal only SQL query.
+   */
+  private BrokerResponseNative processExplainPlanQuery(PlanTreeNode root) {
+    // TODO: add config for non-tabular
+    BrokerResponseNative brokerResponse = new BrokerResponseNative();
+    List<String> columnNames = new ArrayList<>();
+    List<DataSchema.ColumnDataType> columnTypes = new ArrayList<>();
+    columnNames.add("Operator");
+    columnNames.add("Operator_Id");
+    columnNames.add("Parent_Id");
+    columnTypes.add(DataSchema.ColumnDataType.STRING);
+    columnTypes.add(DataSchema.ColumnDataType.INT);
+    columnTypes.add(DataSchema.ColumnDataType.INT);
+    DataSchema dataSchema =
+        new DataSchema(columnNames.toArray(new String[0]), columnTypes.toArray(new DataSchema.ColumnDataType[0]));
+    List<Object[]> resultRows = new ArrayList<>();
+    int[] idArray = new int[1];
+    idArray[0] = -1;
+    addOperatorToTable(resultRows, root, idArray);
+    ResultTable resultTable = new ResultTable(dataSchema, resultRows);
+    brokerResponse.setResultTable(resultTable);
+    return brokerResponse;
+  }
+
+  private void addOperatorToTable(List<Object[]> resultRows, PlanTreeNode node, int[] parentId) {
+    if (node == null) {
+      return;
+    }
+    Object[] resultRow = new Object[3];
+    resultRow[0] = node.toString();
+    resultRow[1] = parentId[0] + 1;
+    resultRow[2] = parentId[0];
+    resultRows.add(resultRow);
+    for (PlanTreeNode child : node.getChildNodes()) {
+      parentId[0] = parentId[0] + 1;
+      addOperatorToTable(resultRows, child, parentId);
     }
   }
 }

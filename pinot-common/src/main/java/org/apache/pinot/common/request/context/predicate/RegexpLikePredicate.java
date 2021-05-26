@@ -67,6 +67,11 @@ public class RegexpLikePredicate implements Predicate {
 
   @Override
   public String toString() {
-    return "regexp_like(" + _lhs + ",'" + _value + "')";
+    try {
+      Double.parseDouble(_value);
+    } catch (NumberFormatException e) {
+      return "regexp_like(" + _lhs + ",'" + _value + "')";
+    }
+    return "regexp_like(" + _lhs + "," + _value + ")";
   }
 }

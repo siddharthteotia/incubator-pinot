@@ -67,6 +67,11 @@ public class JsonMatchPredicate implements Predicate {
 
   @Override
   public String toString() {
-    return "json_match(" + _lhs + ",'" + _value + "')";
+    try {
+      Double.parseDouble(_value);
+    } catch (NumberFormatException e) {
+      return "json_match(" + _lhs + ",'" + _value + "')";
+    }
+    return "json_match(" + _lhs + "," + _value + ")";
   }
 }

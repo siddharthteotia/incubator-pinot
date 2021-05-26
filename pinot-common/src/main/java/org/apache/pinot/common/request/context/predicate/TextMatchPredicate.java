@@ -67,6 +67,11 @@ public class TextMatchPredicate implements Predicate {
 
   @Override
   public String toString() {
-    return "text_match(" + _lhs + ",'" + _value + "')";
+    try {
+      Double.parseDouble(_value);
+    } catch (NumberFormatException e) {
+      return "text_match(" + _lhs + ",'" + _value + "')";
+    }
+    return "text_match(" + _lhs + "," + _value + ")";
   }
 }
