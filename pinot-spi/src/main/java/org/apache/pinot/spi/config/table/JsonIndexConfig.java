@@ -21,9 +21,11 @@ package org.apache.pinot.spi.config.table;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Preconditions;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import javax.annotation.Nullable;
+import org.apache.pinot.spi.data.FieldSpec;
 
 
 /**
@@ -67,6 +69,15 @@ public class JsonIndexConfig extends IndexConfig {
    * Max on-heap bytes size of the mutable JSON index. An underestimate, as this excludes the posting lists.
    */
   private Long _maxBytesSize;
+
+  /**
+   * F5 (typed JSON shredding) — optional list of paths that should be additionally materialized as their own typed
+   * forward index (a "shred"), in addition to the inverted-index entries this config has produced historically.
+   * Set via setter for backward-compatible deserialization; absent from the legacy `@JsonCreator` constructor on
+   * purpose so older controllers/servers tolerate segments built with shreds.
+   */
+  @Nullable
+  private List<TypedPathSpec> _typedPaths;
 
   public JsonIndexConfig() {
     super(false);
@@ -197,6 +208,65 @@ public class JsonIndexConfig extends IndexConfig {
     _maxBytesSize = maxBytesSize;
   }
 
+  @Nullable
+  public List<TypedPathSpec> getTypedPaths() {
+    return _typedPaths;
+  }
+
+  public void setTypedPaths(@Nullable List<TypedPathSpec> typedPaths) {
+    _typedPaths = typedPaths;
+  }
+
+  /**
+   * Specification for a single shredded JSON path. See design doc design/F5-typed-json-shredding.md for context.
+   *
+   * <p>Equality on this class is by-value so it composes cleanly with {@link JsonIndexConfig#equals(Object)}.
+   * Instances are immutable after construction.
+   */
+  public static class TypedPathSpec {
+    private final String _path;
+    private final FieldSpec.DataType _dataType;
+
+    @JsonCreator
+    public TypedPathSpec(@JsonProperty("path") String path,
+        @JsonProperty("dataType") FieldSpec.DataType dataType) {
+      Preconditions.checkArgument(path != null && !path.isEmpty(), "TypedPathSpec.path must be non-empty");
+      Preconditions.checkArgument(dataType != null, "TypedPathSpec.dataType is required");
+      _path = path;
+      _dataType = dataType;
+    }
+
+    public String getPath() {
+      return _path;
+    }
+
+    public FieldSpec.DataType getDataType() {
+      return _dataType;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) {
+        return true;
+      }
+      if (!(o instanceof TypedPathSpec)) {
+        return false;
+      }
+      TypedPathSpec that = (TypedPathSpec) o;
+      return _path.equals(that._path) && _dataType == that._dataType;
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(_path, _dataType);
+    }
+
+    @Override
+    public String toString() {
+      return "TypedPathSpec{path='" + _path + "', dataType=" + _dataType + '}';
+    }
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -213,12 +283,12 @@ public class JsonIndexConfig extends IndexConfig {
         && _disableCrossArrayUnnest == config._disableCrossArrayUnnest && Objects.equals(_includePaths,
         config._includePaths) && Objects.equals(_excludePaths, config._excludePaths) && Objects.equals(_excludeFields,
         config._excludeFields) && _maxValueLength == config._maxValueLength
-        && _skipInvalidJson == config._skipInvalidJson;
+        && _skipInvalidJson == config._skipInvalidJson && Objects.equals(_typedPaths, config._typedPaths);
   }
 
   @Override
   public int hashCode() {
     return Objects.hash(super.hashCode(), _maxLevels, _excludeArray, _disableCrossArrayUnnest, _includePaths,
-        _excludePaths, _excludeFields, _maxValueLength, _skipInvalidJson);
+        _excludePaths, _excludeFields, _maxValueLength, _skipInvalidJson, _typedPaths);
   }
 }
