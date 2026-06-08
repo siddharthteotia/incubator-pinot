@@ -38,16 +38,22 @@ import org.apache.pinot.sql.parsers.CalciteSqlParser;
 
 /**
  * Shared parsing and filter-pushdown helpers for index-aware operators that consume a scalar
- * {@code jsonExtractIndex(column, path, type[, defaultValue])} expression and a JSON index on the column.
+ * {@code jsonExtractIndex(column, path, type[, defaultValue])} or
+ * {@code jsonExtractScalar(column, path, type[, defaultValue])} expression and a JSON index on the column.
+ *
+ * <p>Both function names are accepted because they share the same signature shape and, when the path is indexed,
+ * the dictionary-scan execution path is correct for either spelling. This lets callers benefit from the JSON-index
+ * fast path without having to switch the SQL to the index-specific function.
  */
 public final class JsonExtractIndexUtils {
   private static final String FUNCTION_NAME_EXTRACT_INDEX = "jsonExtractIndex";
+  private static final String FUNCTION_NAME_EXTRACT_SCALAR = "jsonExtractScalar";
 
   private JsonExtractIndexUtils() {
   }
 
   /**
-   * Parsed view of a {@code jsonExtractIndex} call.
+   * Parsed view of a {@code jsonExtractIndex} / {@code jsonExtractScalar} call.
    */
   public static final class ParsedJsonExtractIndex {
     public final String _columnName;
@@ -79,7 +85,8 @@ public final class JsonExtractIndexUtils {
       return null;
     }
     String functionName = expr.getFunction().getFunctionName();
-    if (!FUNCTION_NAME_EXTRACT_INDEX.equalsIgnoreCase(functionName)) {
+    if (!FUNCTION_NAME_EXTRACT_INDEX.equalsIgnoreCase(functionName)
+        && !FUNCTION_NAME_EXTRACT_SCALAR.equalsIgnoreCase(functionName)) {
       return null;
     }
     List<ExpressionContext> args = expr.getFunction().getArguments();
